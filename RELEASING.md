@@ -48,8 +48,8 @@ This checklist streamlines publishing wheels, source distributions, and containe
   ```
 - [ ] Tag & push to GHCR:
   ```bash
-  docker tag gpt-cell-annotator:${VERSION} ghcr.io/your-org/gpt-cell-annotator:${VERSION}
-  docker push ghcr.io/your-org/gpt-cell-annotator:${VERSION}
+  docker tag gpt-cell-annotator:${VERSION} ghcr.io/jameshyojaelee/gpt-cell-annotator:${VERSION}
+  docker push ghcr.io/jameshyojaelee/gpt-cell-annotator:${VERSION}
   ```
 - [ ] Record image digest (`docker inspect --format='{{index .RepoDigests 0}}' ...`) and add to the release notes.
 

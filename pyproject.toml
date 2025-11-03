@@ -9,8 +9,8 @@ description = "AI assistant for annotating single-cell RNA-seq clusters using cu
 authors = [ "GPT Cell Annotator Team <maintainers@gptca.dev>",]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/your-org/GPT-cell-annotator"
-repository = "https://github.com/your-org/GPT-cell-annotator"
+homepage = "https://github.com/jameshyojaelee/CellAnnot-GPT"
+repository = "https://github.com/jameshyojaelee/CellAnnot-GPT"
 keywords = [ "single-cell", "bioinformatics", "annotation", "machine-learning",]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -106,13 +106,14 @@ fakeredis = { version = "^2.23.2", optional = true }
 pandas-stubs = { version = "^2.2.2.240807", optional = true }
 types-pyyaml = { version = "^6.0.12.20240808", optional = true }
 types-jsonschema = { version = "^4.23.0.20241019", optional = true }
-twine = { version = "^5.1.1", optional = true }
+pkginfo = { version = "^1.10.0", optional = true }
+twine = { version = "^6.1.0", optional = true }
 
 [tool.poetry.extras]
 api = [ "fastapi", "uvicorn", "redis", "prometheus-client" ]
 ui = [ "streamlit", "altair", "fpdf2", "matplotlib", "seaborn" ]
 scanpy = [ "scanpy", "loompy" ]
-dev = [ "pytest", "pytest-asyncio", "black", "ruff", "mypy", "fakeredis", "pandas-stubs", "types-pyyaml", "types-jsonschema", "poethepoet", "twine" ]
+dev = [ "pytest", "pytest-asyncio", "black", "ruff", "mypy", "fakeredis", "pandas-stubs", "types-pyyaml", "types-jsonschema", "poethepoet", "twine", "pkginfo" ]
 full = [
     "fastapi",
     "uvicorn",

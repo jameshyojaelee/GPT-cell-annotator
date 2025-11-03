@@ -23,8 +23,8 @@ flowchart LR
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/GPT-cell-annotator.git
-cd GPT-cell-annotator
+git clone https://github.com/jameshyojaelee/CellAnnot-GPT.git
+cd CellAnnot-GPT
 
 # Option A: Poetry (recommended)
 poetry install

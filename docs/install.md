@@ -101,8 +101,8 @@ Volumes:
 ## Working from Source
 
 ```bash
-git clone https://github.com/your-org/GPT-cell-annotator.git
-cd GPT-cell-annotator
+git clone https://github.com/jameshyojaelee/CellAnnot-GPT.git
+cd CellAnnot-GPT
 
 python -m venv .venv
 source .venv/bin/activate
