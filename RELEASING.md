@@ -6,7 +6,7 @@ This checklist streamlines publishing wheels, source distributions, and containe
 - [ ] Ensure your working tree is clean (`git status`).
 - [ ] Update `pyproject.toml` version and run `poetry lock` if dependencies changed.
 - [ ] Regenerate assets or marker databases if needed.
-- [ ] Run the full validation suite:
+- [x] Run the full validation suite:
   ```bash
   make install          # installs api/ui/scanpy/dev extras
   make lint
@@ -15,12 +15,12 @@ This checklist streamlines publishing wheels, source distributions, and containe
   ```
 
 ## 2. Build & Verify Artifacts
-- [ ] Create fresh build outputs:
+- [x] Create fresh build outputs:
   ```bash
   make release          # poetry build + twine check
   ```
-- [ ] Inspect the contents of `dist/` to confirm both `*.tar.gz` and `*.whl` exist.
-- [ ] Smoke-test the wheel in a clean virtual environment:
+- [x] Inspect the contents of `dist/` to confirm both `*.tar.gz` and `*.whl` exist.
+- [x] Smoke-test the wheel in a clean virtual environment:
   ```bash
   python -m venv /tmp/gca-release
   source /tmp/gca-release/bin/activate
@@ -39,7 +39,7 @@ This checklist streamlines publishing wheels, source distributions, and containe
   pip install "gpt-cell-annotator[api,scanpy]"
   gca --version
   ```
-- [ ] Archive the installation matrix and smoke-test notes under `docs/reports/releases/${VERSION}/install_matrix.md`.
+- [x] Archive the installation matrix and smoke-test notes under `docs/reports/releases/${VERSION}/install_matrix.md`.
 
 ## 4. Build & Push Docker Images
 - [ ] Build the release image:
@@ -68,3 +68,5 @@ This checklist streamlines publishing wheels, source distributions, and containe
 - [ ] Reset development version (e.g., bump to `0.x.y-dev`).
 
 Happy releasing!
+
+_Release 0.2.0 provenance: see `docs/reports/releases/0.2.0/` for smoke tests, install matrix, hashes, and release notes._
