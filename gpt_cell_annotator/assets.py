@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 import shutil
+from collections.abc import Iterable, Iterator
 from importlib import resources
 from importlib.abc import Traversable
 from pathlib import Path
-from typing import Iterable, Iterator
 
 ASSET_PACKAGE = "gpt_cell_annotator._assets"
 HOME_ENV_VAR = "GPT_CELL_ANNOTATOR_HOME"
@@ -82,7 +82,12 @@ def _copy_traversable(src: Traversable, dest: Path, *, overwrite: bool) -> None:
         dest.write_bytes(src.read_bytes())
 
 
-def install_asset(relative_path: str | Path, *, home: Path | None = None, overwrite: bool = False) -> Path:
+def install_asset(
+    relative_path: str | Path,
+    *,
+    home: Path | None = None,
+    overwrite: bool = False,
+) -> Path:
     """Ensure ``relative_path`` is available under the asset home directory."""
 
     rel = Path(relative_path)

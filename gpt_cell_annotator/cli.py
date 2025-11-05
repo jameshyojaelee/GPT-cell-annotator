@@ -20,9 +20,9 @@ from backend.data_ingest.marker_loader import (
     MarkerDataLoader,
     load_sources_from_yaml,
 )
+from backend.llm.annotator import Annotator
 from backend.validation.crosscheck import crosscheck_batch
 from backend.validation.report import build_structured_report
-from backend.llm.annotator import Annotator
 from config.settings import get_settings
 from gpt_cell_annotator import assets
 from gpt_cell_annotator.scanpy import report_to_dataframe
@@ -72,7 +72,7 @@ def _parse_markers(value: Any) -> list[str]:
                     break
             else:
                 candidates = [text]
-    elif isinstance(value, (list, tuple, set)):
+    elif isinstance(value, list | tuple | set):
         candidates = list(value)
     else:
         candidates = [value]
@@ -249,7 +249,7 @@ def cmd_scanpy(args: argparse.Namespace) -> int:
     home_dir, data_dir = _prepare_environment(args)
     cmd_args = args.scanpy_args or ["--help"]
     os.environ.setdefault("GPT_CELL_ANNOTATOR_ASSETS_HOME", str(home_dir))
-    sys.argv = ["gca scanpy"] + cmd_args
+    sys.argv = ["gca scanpy", *cmd_args]
     from gpt_cell_annotator import scanpy
 
     return scanpy.main(cmd_args)

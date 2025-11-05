@@ -8,11 +8,11 @@ import json
 import logging
 import os
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Callable, NamedTuple, Protocol, cast
+from typing import Any, NamedTuple, Protocol, cast
 from uuid import uuid4
 
 import anndata as ad
@@ -38,7 +38,6 @@ try:  # Prefer structlog for telemetry; fall back to stdlib logging otherwise.
 
     def _log(event: str, /, **fields: Any) -> None:
         _logger.info(event, **fields)
-
 
 except ImportError:  # pragma: no cover - structlog is an optional extra at runtime.
     structlog = cast(Any, None)
@@ -384,9 +383,7 @@ def _load_marker_db(
     if marker_db is not None:
         return _ensure_columns(marker_db.copy())
 
-    resolved = _resolve_marker_db_path(
-        Path(marker_db_path) if marker_db_path is not None else None
-    )
+    resolved = _resolve_marker_db_path(Path(marker_db_path) if marker_db_path is not None else None)
     resolved = resolved.resolve()
 
     if cache:
@@ -621,11 +618,7 @@ def _apply_annotations_to_obs(
         cluster_id = cluster_report.cluster_id
         annotation = cluster_report.annotation
         metadata = annotation.get("metadata") or {}
-        mapping_notes = (
-            metadata.get("mapping_notes")
-            or annotation.get("mapping_notes")
-            or []
-        )
+        mapping_notes = metadata.get("mapping_notes") or annotation.get("mapping_notes") or []
         canonical_markers = metadata.get("canonical_markers") or annotation.get("markers") or []
         mapping_display = " | ".join(
             f"{note.get('source', '?')}→{note.get('target') or 'unmapped'}"
@@ -974,9 +967,7 @@ def _apply_preset(args: argparse.Namespace) -> None:
     preset = SPECIES_PRESETS.get(args.preset)
     if not preset:
         available = ", ".join(SPECIES_PRESETS)
-        raise SystemExit(
-            f"Unknown preset '{args.preset}'. Available presets: {available}"
-        )
+        raise SystemExit(f"Unknown preset '{args.preset}'. Available presets: {available}")
     if not args.species:
         args.species = preset.get("species")
     if not args.tissue and preset.get("tissue"):

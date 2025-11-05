@@ -108,12 +108,13 @@ types-pyyaml = { version = "^6.0.12.20240808", optional = true }
 types-jsonschema = { version = "^4.23.0.20241019", optional = true }
 pkginfo = { version = "^1.10.0", optional = true }
 twine = { version = "^6.1.0", optional = true }
+pre-commit = { version = "^3.7.1", optional = true }
 
 [tool.poetry.extras]
 api = [ "fastapi", "uvicorn", "redis", "prometheus-client" ]
 ui = [ "streamlit", "altair", "fpdf2", "matplotlib", "seaborn" ]
 scanpy = [ "scanpy", "loompy" ]
-dev = [ "pytest", "pytest-asyncio", "black", "ruff", "mypy", "fakeredis", "pandas-stubs", "types-pyyaml", "types-jsonschema", "poethepoet", "twine", "pkginfo" ]
+dev = [ "pytest", "pytest-asyncio", "black", "ruff", "mypy", "fakeredis", "pandas-stubs", "types-pyyaml", "types-jsonschema", "poethepoet", "twine", "pkginfo", "pre-commit" ]
 full = [
     "fastapi",
     "uvicorn",

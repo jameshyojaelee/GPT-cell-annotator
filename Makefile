@@ -1,4 +1,4 @@
-.PHONY: install format lint test typecheck ruff ruff-fix build-marker-db api ui clean
+.PHONY: install format lint test typecheck ruff ruff-fix build-marker-db api ui clean pre-commit
 
 install:
 	poetry install --extras "dev" --extras "scanpy" --extras "api" --extras "ui"
@@ -17,7 +17,10 @@ lint: ruff typecheck
 typecheck:
 	poetry run mypy backend
 
-test:
+pre-commit:
+	poetry run pre-commit run --all-files
+
+test: lint
 	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 poetry run pytest
 
 release:

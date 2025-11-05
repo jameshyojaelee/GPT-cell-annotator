@@ -107,6 +107,10 @@ Cluster  Primary Label     Confidence  Status     Warnings
 
 Add `--out-json demo_annotations.json` to store the structured report (same schema as the REST API). Continue with the UI or Scanpy tutorials in [`docs/getting_started.md`](docs/getting_started.md#guided-tutorials).
 
+## Development
+
+Refer to [`docs/development.md`](docs/development.md) for contributor environment setup, pre-commit usage, and test workflows.
+
 ## Key Features
 
 [![Seurat Workflow](https://img.shields.io/badge/docs-seurat_integration-orange)](docs/seurat_integration.md)
