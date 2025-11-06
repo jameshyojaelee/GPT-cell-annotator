@@ -2,6 +2,21 @@
 
 This checklist streamlines publishing wheels, source distributions, and container images. It assumes you have push access to PyPI, GitHub Container Registry (GHCR), and the project repository.
 
+## Python Package Release Checklist
+Follow this mini checklist whenever you cut a new Python release:
+- [ ] Build fresh artifacts with `uv build` (mirrors the tox packaging environment).
+- [ ] Run `tox -e packaging` or `make packaging-check` to rebuild, run `twine check`, and smoke-test the `gca scanpy` CLI from the generated wheel.
+- [ ] Capture SHA256 checksums: `shasum -a 256 dist/*`.
+- [ ] In a throwaway virtual environment, install the wheel with Scanpy extras and run the CLI:
+  ```bash
+  python -m venv /tmp/gca-scanpy-smoke
+  source /tmp/gca-scanpy-smoke/bin/activate
+  pip install dist/gpt_cell_annotator-*.whl[scanpy]
+  gca scanpy annotate --help
+  deactivate && rm -rf /tmp/gca-scanpy-smoke
+  ```
+- [ ] Log the compatibility tier you validated (AnnData/Scanpy versions) in the release notes.
+
 ## 1. Pre-flight
 - [ ] Ensure your working tree is clean (`git status`).
 - [ ] Update `pyproject.toml` version and run `poetry lock` if dependencies changed.

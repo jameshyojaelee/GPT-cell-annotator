@@ -1,4 +1,4 @@
-.PHONY: install format lint test typecheck ruff ruff-fix build-marker-db api ui clean pre-commit
+.PHONY: install format lint test typecheck ruff ruff-fix build-marker-db api ui clean pre-commit packaging-check
 
 install:
 	poetry install --extras "dev" --extras "scanpy" --extras "api" --extras "ui"
@@ -26,6 +26,9 @@ test: lint
 release:
 	poetry build
 	poetry run twine check dist/*
+
+packaging-check:
+	tox -e packaging
 
 build-marker-db:
 	poetry run python scripts/build_marker_db.py
