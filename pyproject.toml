@@ -38,7 +38,7 @@ include = [
 
 [tool.poetry.scripts]
 gca = "gpt_cell_annotator.cli:main"
-gca.scanpy = "gpt_cell_annotator.scanpy_cli:main"
+"gca.scanpy" = "gpt_cell_annotator.scanpy_cli:main"
 
 [tool.black]
 line-length = 100

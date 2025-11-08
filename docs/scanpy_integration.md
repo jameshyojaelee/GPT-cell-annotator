@@ -3,6 +3,8 @@
 Leverage GPT Cell Annotator inside Scanpy notebooks, pipelines, and headless batch jobs. The integration ships with both a rich Python API (`annotate_anndata`) and a CLI (`gca scanpy`) so you can stay in your preferred workflow.
 
 > Prefer Seurat? Head to [`docs/seurat_integration.md`](docs/seurat_integration.md) for the R workflow and pkgdown links.
+>
+> Migrating from the previous async/concurrency workflow? See [`docs/migration/scanpy_vNext.md`](docs/migration/scanpy_vNext.md).
 
 ## Quickstart Checklist
 
@@ -36,7 +38,7 @@ result = annotate_anndata(
     species="Homo sapiens",
     tissue="Peripheral blood",
     top_n_markers=5,
-    batch_options=BatchOptions(size=16, concurrency=2),
+    batch_options=BatchOptions(chunk_size=16),
     guardrails=GuardrailConfig(min_marker_overlap=1),
 )
 
@@ -44,33 +46,31 @@ result.report.summary
 result.adata.obs[["gptca_label", "gptca_confidence", "gptca_status"]].head()
 ```
 
-> Working inside an async context (e.g., JupyterLab with `nest_asyncio`)? Call `await annotate_anndata_async(...)` for the same result type.
-
 ### What the helper does
 
 1. Computes `rank_genes_groups` if the AnnData object lacks marker rankings.
 2. Normalises gene symbols and builds the batch payload.
 3. Calls the annotation engine (mock or live depending on `OPENAI_API_KEY`).
 4. Cross-checks results against the marker DB and writes columns such as `gptca_label`, `gptca_status`, `gptca_rationale`, `gptca_canonical_markers`, and `gptca_mapping_notes`.
-5. Returns a `ScanpyAnnotationResult` with `.adata`, `.report` (the `DatasetReport` model), `.annotations`, and `.stats` for telemetry.
+5. Returns a `ScanpyAnnotationResult` with `.adata`, `.annotations`, and `.report` (`ScanpyDatasetReport`) summarising guardrails, cache hits, and offline mode.
 
 ### Common Parameters
 
 - `top_n_markers`: choose how many markers per cluster are sent to the LLM (default `5`).
 - `result_prefix`: customise output column prefixes (e.g., `"ca2025_label"`).
-- `marker_db_path` / `marker_db`: point to custom knowledge bases (Parquet DataFrame).
+- `marker_db_path` / `marker_db`: point to custom knowledge bases (Parquet DataFrame). Marker DBs are cached under `~/.cache/gpt-cell-annotator` (or `GCA_CACHE_DIR`) for faster reloads.
 - `annotator`: inject your own `Annotator` (e.g., forcing `force_mock=True` for validation runs).
-- `batch_options`: control batch size/concurrency. Defaults to `BatchOptions(size=32, concurrency=1)`.
+- `batch_options`: control chunk size per LLM request. Defaults to `BatchOptions(chunk_size=32)`.
 - `guardrails`: override thresholds via `GuardrailConfig` instead of mutating global settings.
-- `annotation_cache`: pass a `DiskAnnotationCache` (or custom async cache) to persist responses between runs.
-- `request_id`: provide a custom identifier that flows into structlog and Prometheus metrics.
+- `annotation_cache`: pass a `DiskAnnotationCache` (or `--cache-dir`/`GCA_CACHE_DIR`) to persist responses between runs.
+- `request_id`: provide a custom identifier that flows into log records.
 - `compute_rankings=False`: skip automatic `scanpy.tl.rank_genes_groups` if you already have rankings.
 
 ### Convenience Wrappers
 
 - `annotate_rank_genes(rank_genes_groups, species=...)` – Run the annotator on a `rank_genes_groups['names']` mapping without an AnnData object.
 - `annotate_from_markers({"cluster": ["MS4A1", ...], ...})` – Annotate directly from marker dictionaries when Scanpy is not available.
-- Both wrappers return `MarkerAnnotationResult` (with `.report` and `.stats`) so you can reuse validation summaries outside AnnData workflows.
+- Both wrappers return `MarkerAnnotationResult` (with `.report` and aggregated stats) so you can reuse validation summaries outside AnnData workflows.
 
 ## Command-Line Workflow
 
@@ -80,32 +80,31 @@ The CLI mirrors the notebook flow and is ideal for automation, Nextflow/Snakemak
 gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --cluster-key leiden \
   --species "Homo sapiens" \
-  --batch-size 24 \
-  --concurrency 2 \
+  --chunk-size 24 \
   --cache-dir ~/.cache/gca/annotations \
   --preset human_pbmc \
-  --summary-json reports/pbmc_report.json \
-  --stats-json reports/pbmc_stats.json \
+  --json-report reports/pbmc_report.json \
   --offline
 
-gca scanpy validate data/demo/pbmc_demo.h5ad \
+gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --cluster-key leiden \
   --label-column curated_label \
   --species "Homo sapiens" \
-  --summary-json reports/pbmc_guardrails.json
+  --validate-only \
+  --json-report reports/pbmc_guardrails.json
 ```
 
 Key flags:
 
 - `--marker-db` – override the Parquet file. Defaults to the cached `~/.cache/gpt-cell-annotator/data/processed/marker_db.parquet` or `GCA_MARKER_DB_PATH`.
-- `--batch-size` / `--concurrency` – control how many clusters are sent per batch and how many batches run concurrently.
-- `--cache-dir` – persist annotation responses on disk (`DiskAnnotationCache`). Falls back to `GCA_CACHE_DIR` when unset.
+- `--chunk-size` – control how many clusters are sent per LLM request.
+- `--cache-dir` / `--use-cache` – persist annotation responses on disk (`DiskAnnotationCache`). Falls back to `GCA_CACHE_DIR` when unset.
 - `--preset` – apply species/tissue shortcuts such as `human_pbmc` or `mouse_brain`.
-- `--summary-json`, `--summary-csv`, `--stats-json` – materialise structured reports and batching telemetry.
+- `--json-report`, `--summary-csv` – materialise structured reports.
 - `--guardrail-min-overlap` & `--guardrail-force-unknown` – override guardrail thresholds without editing `.env`.
-- `gca scanpy validate` – run the guardrails against existing annotation columns without calling the LLM.
+- `--validate-only` – skip LLM calls and rerun guardrails against existing annotation columns.
 
-For reference implementations see [`docs/demo.md`](docs/demo.md) for the live demo script and [`scripts/run_benchmarks.py`](../scripts/run_benchmarks.py) for a headless example that feeds annotation outputs into evaluation metrics.
+For reference implementations see [`docs/demo.md`](docs/demo.md) for the live demo script and [`notebooks/scanpy_benchmark.py`](../notebooks/scanpy_benchmark.py) for a headless benchmark comparing cached vs. uncached runs.
 
 ## Validation & Guardrails
 
@@ -125,10 +124,10 @@ gca scanpy annotate ...
 
 ## Batching, Caching & Telemetry
 
-- `BatchOptions(size, concurrency)` keeps large projects responsive while respecting OpenAI rate limits.
+- `BatchOptions(chunk_size)` keeps large projects responsive while respecting rate limits.
 - `DiskAnnotationCache(path)` (or `--cache-dir`/`GCA_CACHE_DIR`) stores per-cluster results so reruns can skip the LLM entirely.
 - Set `GCA_MARKER_DB_PATH` to point at enterprise marker databases without copying files into the project tree.
-- Every run emits structlog events (`scanpy.annotate.start/complete`, `scanpy.validate.complete`) and, when `[api]` is installed, Prometheus counters/histograms (`gca_scanpy_batches_total`, `gca_scanpy_batch_duration_seconds`).
+- Every run emits standard logging records (`scanpy.annotate.start/complete`, `scanpy.validate.complete`). Hook into logging configuration to forward them elsewhere.
 - Pass a `request_id` (CLI `--request-id`) to correlate notebooks, CLI runs, and API logs.
 
 ## Cross-Species Workflows
@@ -146,7 +145,6 @@ gca scanpy annotate ...
 | `ValueError: rank_genes_groups` missing | Install the Scanpy extra and avoid `--skip-recompute-markers`; `annotate_anndata` can compute rankings automatically when Scanpy is available. |
 | Mock annotations when API key is set | Confirm `OPENAI_API_KEY` is exported in the environment invoking the CLI/notebook. |
 | No markers written to `*_canonical_markers` | Ensure clusters contain at least one ranked gene above `top_n_markers`. |
-| `RuntimeError: annotate_anndata cannot be called from an async context` | Switch to `await annotate_anndata_async(...)` within notebooks or async pipelines. |
 
 ## Further Reading
 

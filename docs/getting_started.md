@@ -97,7 +97,7 @@ result = annotate_anndata(
     cluster_key="leiden",
     species="Homo sapiens",
     tissue="Peripheral blood",
-    batch_options=BatchOptions(size=24, concurrency=2),
+    batch_options=BatchOptions(chunk_size=24),
 )
 
 result.report.summary

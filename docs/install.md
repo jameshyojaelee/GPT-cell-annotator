@@ -47,10 +47,10 @@ gca build-db --offline --output-dir ~/.cache/gca/db
 
 # Forward to the Scanpy helper CLI
 gca scanpy annotate demo.h5ad --species "Homo sapiens" --cluster-key leiden \
-  --batch-size 16 --concurrency 2 --cache-dir ~/.cache/gca/annotations
+  --chunk-size 16 --cache-dir ~/.cache/gca/annotations
 
-gca scanpy validate demo.h5ad --species "Homo sapiens" --cluster-key leiden \
-  --label-column curated_label
+gca scanpy annotate demo.h5ad --species "Homo sapiens" --cluster-key leiden \
+  --label-column curated_label --validate-only
 
 # Launch the FastAPI server
 gca api --offline --host 0.0.0.0 --port 8000

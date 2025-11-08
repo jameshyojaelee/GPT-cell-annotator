@@ -56,13 +56,17 @@ jobs:
           poetry run gca scanpy annotate "$tmp_dir/smoke.h5ad" \
             --cluster-key cluster \
             --species "Homo sapiens" \
-            --batch-size 2 \
-            --concurrency 1 \
-            --summary-json "$tmp_dir/smoke_report.json" \
-            --stats-json "$tmp_dir/smoke_stats.json" \
+            --chunk-size 2 \
+            --json-report "$tmp_dir/smoke_report.json" \
+            --summary-csv "$tmp_dir/smoke_summary.csv" \
             --offline
           test -s "$tmp_dir/smoke_report.json"
           rm -rf "$tmp_dir"
+
+      - name: Execute Scanpy benchmark notebook
+        run: |
+          poetry run pip install nbmake
+          poetry run nbmake notebooks/ScanpyBenchmark.ipynb --timeout=600
 
       - name: Build distribution artifacts
         run: |

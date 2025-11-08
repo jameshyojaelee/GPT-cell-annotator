@@ -3,55 +3,38 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import logging
 import os
-import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, NamedTuple, Protocol, cast
-from uuid import uuid4
+from typing import Any, Callable, Iterable, Mapping, Sequence, cast
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 from anndata import AnnData
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.llm.annotator import Annotator
 from backend.validation.crosscheck import crosscheck_batch
 from backend.validation.report import DatasetReport, build_structured_report
 from config.settings import Settings, get_settings
 from gpt_cell_annotator import assets
+from gpt_cell_annotator.cache import MarkerDatabaseCache, default_cache_dir
 
-try:  # Optional dependency used for ranking and Loom IO.
+try:  # Optional dependency used for Loom IO.
     import scanpy as sc
 except ImportError:  # pragma: no cover - handled via guards in runtime paths.
     sc = None
 
-try:  # Prefer structlog for telemetry; fall back to stdlib logging otherwise.
-    import structlog
+try:  # Progress bars are optional; fallback to logging when missing.
+    from tqdm import tqdm
+except ImportError:  # pragma: no cover - tqdm is an optional extra.
+    tqdm = None  # type: ignore[assignment]
 
-    _logger = structlog.get_logger("gpt_cell_annotator.scanpy")
-
-    def _log(event: str, /, **fields: Any) -> None:
-        _logger.info(event, **fields)
-
-except ImportError:  # pragma: no cover - structlog is an optional extra at runtime.
-    structlog = cast(Any, None)
-    _logger = logging.getLogger("gpt_cell_annotator.scanpy")
-
-    def _log(event: str, /, **fields: Any) -> None:
-        _logger.info("%s %s", event, fields)
-
-
-try:  # Optional metrics sink for extras[gca,api]
-    from prometheus_client import Counter, Histogram
-except ImportError:  # pragma: no cover - optional dependency
-    Counter = Histogram = None
-
+logger = logging.getLogger("gpt_cell_annotator.scanpy")
 
 MARKER_DB_COLUMNS = [
     "source",
@@ -65,10 +48,9 @@ MARKER_DB_COLUMNS = [
     "evidence_score",
 ]
 
-CACHE_VERSION = "scanpy-v2"
 MARKER_DB_ENV_VAR = "GCA_MARKER_DB_PATH"
-CACHE_DIR_ENV_VAR = "GCA_CACHE_DIR"
 REQUEST_ID_ENV_VAR = "GCA_REQUEST_ID"
+CACHE_VERSION = "scanpy-v3"
 
 SPECIES_PRESETS: dict[str, dict[str, str | None]] = {
     "human_pbmc": {"species": "Homo sapiens", "tissue": "Peripheral blood"},
@@ -76,50 +58,41 @@ SPECIES_PRESETS: dict[str, dict[str, str | None]] = {
     "mouse_brain": {"species": "Mus musculus", "tissue": "Brain"},
 }
 
-if Counter is not None:
-    _BATCH_COUNTER = Counter(
-        "gca_scanpy_batches_total",
-        "Number of annotation batches executed through the Scanpy integration.",
-        ("mode",),
-    )
-    _CLUSTER_COUNTER = Counter(
-        "gca_scanpy_clusters_total",
-        "Number of clusters annotated through the Scanpy integration.",
-        ("mode",),
-    )
-    _BATCH_DURATION = Histogram(
-        "gca_scanpy_batch_duration_seconds",
-        "Duration of annotation batches in seconds.",
-        ("mode",),
-    )
-else:  # pragma: no cover - metrics optional
-    _BATCH_COUNTER = None
-    _CLUSTER_COUNTER = None
-    _BATCH_DURATION = None
+_MARKER_CACHE_SINGLETON: MarkerDatabaseCache | None = None
 
 
-class AnnotationCacheProtocol(Protocol):
-    """Minimal async cache interface used by the batching workflow."""
-
-    async def get(
-        self,
-        payload: dict[str, Any],
-    ) -> dict[str, Any] | None:  # pragma: no cover - protocol
-        ...
-
-    async def set(
-        self,
-        payload: dict[str, Any],
-        value: dict[str, Any],
-    ) -> None:  # pragma: no cover - protocol
-        ...
+def _marker_cache() -> MarkerDatabaseCache:
+    global _MARKER_CACHE_SINGLETON
+    if _MARKER_CACHE_SINGLETON is None:
+        _MARKER_CACHE_SINGLETON = MarkerDatabaseCache()
+    return _MARKER_CACHE_SINGLETON
 
 
+class ScanpyAnnotationError(RuntimeError):
+    """Base exception for Scanpy integration failures."""
+
+
+class MarkerDatabaseError(ScanpyAnnotationError):
+    """Raised when the marker database cannot be resolved or loaded."""
+
+
+def _default_request_id(user_supplied: str | None) -> str:
+    env_override = os.environ.get(REQUEST_ID_ENV_VAR)
+    if user_supplied:
+        return user_supplied
+    if env_override:
+        return env_override
+    return f"scanpy-{os.getpid()}"
+
+
+@dataclass(slots=True)
 class DiskAnnotationCache:
-    """Disk-backed cache for Scanpy annotations (offline-friendly)."""
+    """Disk-backed cache for Scanpy annotations (synchronous)."""
 
-    def __init__(self, root: Path) -> None:
-        self.root = root
+    root: Path
+
+    def __post_init__(self) -> None:
+        self.root = self.root.expanduser()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path_for(self, payload: dict[str, Any]) -> Path:
@@ -127,18 +100,10 @@ class DiskAnnotationCache:
         digest = sha256(canonical.encode("utf-8")).hexdigest()
         return self.root / f"{digest}.json"
 
-    async def get(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+    def get(self, payload: dict[str, Any]) -> dict[str, Any] | None:
         path = self._path_for(payload)
         if not path.exists():
             return None
-        return await asyncio.to_thread(self._read, path)
-
-    async def set(self, payload: dict[str, Any], value: dict[str, Any]) -> None:
-        path = self._path_for(payload)
-        await asyncio.to_thread(self._write, path, value)
-
-    @staticmethod
-    def _read(path: Path) -> dict[str, Any] | None:
         try:
             loaded: Any = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -147,8 +112,8 @@ class DiskAnnotationCache:
             return loaded
         return None
 
-    @staticmethod
-    def _write(path: Path, value: dict[str, Any]) -> None:
+    def set(self, payload: dict[str, Any], value: dict[str, Any]) -> None:
+        path = self._path_for(payload)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value), encoding="utf-8")
 
@@ -180,81 +145,78 @@ class GuardrailConfig:
 
 @dataclass(slots=True)
 class BatchOptions:
-    """Controls batching characteristics for annotation requests."""
+    """Controls chunk size for annotation batches."""
 
-    size: int = 32
-    concurrency: int = 1
+    chunk_size: int = 32
 
-    def normalized(self, total: int) -> BatchOptions:
-        size = max(1, self.size or total)
-        concurrency = max(1, self.concurrency)
-        if total < size:
-            size = total
-        if total < concurrency:
-            concurrency = total
-        return BatchOptions(size=size, concurrency=concurrency)
+    def normalized(self, total: int) -> int:
+        if total <= 0:
+            return 1
+        return max(1, min(self.chunk_size, total))
 
 
-class ScanpyAnnotationResult(NamedTuple):
-    """Structured response returned from annotate_anndata."""
+class ScanpyDatasetReport(BaseModel):
+    """Structured report summarising annotations plus runtime metadata."""
 
-    adata: AnnData
-    report: DatasetReport
-    annotations: list[dict[str, Any]]
-    stats: dict[str, Any]
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dataset: DatasetReport
+    cache_hits: int = Field(default=0, ge=0)
+    llm_batches: int = Field(default=0, ge=0)
+    offline_mode: bool = False
+    guardrail_min_overlap: int = Field(default=1, ge=0)
+    guardrail_overrides: dict[str, Any] = Field(default_factory=dict)
+    request_id: str = ""
+    chunk_size: int = Field(default=1, ge=1)
 
     @property
+    def warnings(self) -> list[str]:
+        collected: list[str] = []
+        for cluster in self.dataset.clusters:
+            collected.extend(cluster.warnings or [])
+        return collected
+
+    def stats_dict(self) -> dict[str, Any]:
+        return {
+            "total_clusters": self.dataset.summary.total_clusters,
+            "cache_hits": self.cache_hits,
+            "llm_batches": self.llm_batches,
+            "offline_mode": self.offline_mode,
+            "guardrail_min_marker_overlap": self.guardrail_min_overlap,
+            "chunk_size": self.chunk_size,
+            "mode": "offline" if self.offline_mode else "live",
+        }
+
+
+@dataclass(slots=True)
+class ScanpyAnnotationResult:
+    """Return object from annotate_anndata."""
+
+    adata: AnnData
+    annotations: list[dict[str, Any]]
+    report: ScanpyDatasetReport
+
+    @property
+    def stats(self) -> dict[str, Any]:
+        return self.report.stats_dict()
+
     def report_dict(self) -> dict[str, Any]:
-        return self.report.model_dump()
+        payload = self.report.model_dump()
+        payload["dataset"] = self.report.dataset.model_dump()
+        return payload
 
 
-class MarkerAnnotationResult(NamedTuple):
+@dataclass(slots=True)
+class MarkerAnnotationResult:
     """Result returned when annotating pre-computed marker collections."""
 
     annotations: list[dict[str, Any]]
-    report: DatasetReport
-    stats: dict[str, Any]
+    report: ScanpyDatasetReport
 
-    @property
     def report_dict(self) -> dict[str, Any]:
-        return self.report.model_dump()
-
-
-def _default_request_id(user_supplied: str | None) -> str:
-    env_override = os.environ.get(REQUEST_ID_ENV_VAR)
-    if user_supplied:
-        return user_supplied
-    if env_override:
-        return env_override
-    return str(uuid4())
-
-
-async def _run_in_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
-    return await asyncio.to_thread(lambda: func(*args, **kwargs))
-
-
-def _ensure_rankings(
-    adata: AnnData,
-    cluster_key: str,
-    *,
-    top_n_markers: int,
-    method: str = "wilcoxon",
-) -> None:
-    """Compute rank_genes_groups if missing or incompatible with cluster key."""
-
-    rankings = adata.uns.get("rank_genes_groups")
-    params = (rankings or {}).get("params", {})
-    if rankings is not None and params.get("groupby") == cluster_key:
-        return
-
-    if sc is None:
-        raise ImportError(
-            "scanpy is required to compute marker rankings. Install the "
-            'extra with `pip install "gpt-cell-annotator[scanpy]"` or '
-            "precompute `rank_genes_groups` before calling annotate_anndata."
-        )
-
-    sc.tl.rank_genes_groups(adata, groupby=cluster_key, n_genes=top_n_markers, method=method)
+        payload = self.report.model_dump()
+        payload["dataset"] = self.report.dataset.model_dump()
+        return payload
 
 
 def _unique_ordered(markers: Iterable[Any]) -> list[str]:
@@ -272,6 +234,28 @@ def _unique_ordered(markers: Iterable[Any]) -> list[str]:
         seen.add(upper)
         ordered.append(upper)
     return ordered
+
+
+def _ensure_rankings(
+    adata: AnnData,
+    cluster_key: str,
+    *,
+    top_n_markers: int,
+    method: str = "wilcoxon",
+) -> None:
+    rankings = adata.uns.get("rank_genes_groups")
+    params = (rankings or {}).get("params", {})
+    if rankings is not None and params.get("groupby") == cluster_key:
+        return
+
+    if sc is None:
+        raise ImportError(
+            "scanpy is required to compute marker rankings. Install the "
+            'extra with `pip install "gpt-cell-annotator[scanpy]"` or '
+            "precompute `rank_genes_groups` before calling annotate_anndata."
+        )
+
+    sc.tl.rank_genes_groups(adata, groupby=cluster_key, n_genes=top_n_markers, method=method)
 
 
 def _markers_from_rankings(
@@ -309,277 +293,6 @@ def _build_cluster_index(cluster_series: pd.Series) -> dict[str, list[str]]:
     for obs_idx, cluster_id in cluster_series.items():
         mapping.setdefault(str(cluster_id), []).append(str(obs_idx))
     return mapping
-
-
-def _report_to_dataframe(report: DatasetReport | dict[str, Any]) -> pd.DataFrame:
-    dataset = report if isinstance(report, DatasetReport) else DatasetReport.model_validate(report)
-    records: list[dict[str, Any]] = []
-    for cluster in dataset.clusters:
-        annotation = cluster.annotation
-        records.append(
-            {
-                "cluster_id": cluster.cluster_id,
-                "primary_label": annotation.get("primary_label"),
-                "confidence": cluster.confidence,
-                "status": cluster.status,
-                "ontology_id": annotation.get("ontology_id"),
-                "rationale": annotation.get("rationale"),
-                "warnings": "; ".join(cluster.warnings or []),
-            }
-        )
-    return pd.DataFrame.from_records(records)
-
-
-def report_to_dataframe(report: DatasetReport | dict[str, Any]) -> pd.DataFrame:
-    """Return a dataframe summarising cluster annotations."""
-
-    return _report_to_dataframe(report)
-
-
-def _resolve_marker_db_path(marker_db_path: Path | None) -> Path:
-    if marker_db_path is not None:
-        candidate = Path(marker_db_path).expanduser()
-        if candidate.exists():
-            return candidate
-
-    env_path = os.environ.get(MARKER_DB_ENV_VAR)
-    if env_path:
-        candidate = Path(env_path).expanduser()
-        if candidate.exists():
-            return candidate
-
-    settings = get_settings()
-    data_dir = Path(settings.data_dir)
-    default_path = data_dir / "marker_db.parquet"
-    if default_path.exists():
-        return default_path
-
-    ensured_dir = assets.ensure_marker_database(target_dir=data_dir)
-    candidate = ensured_dir / "marker_db.parquet"
-    if candidate.exists():
-        return candidate
-    fallback = assets.ensure_marker_database() / "marker_db.parquet"
-    if fallback.exists():
-        return fallback
-    raise FileNotFoundError("marker_db.parquet could not be located or materialised.")
-
-
-_MARKER_CACHE: dict[Path, tuple[float, pd.DataFrame]] = {}
-
-
-def _load_marker_db(
-    marker_db: pd.DataFrame | None,
-    marker_db_path: str | Path | None,
-    *,
-    cache: bool = True,
-) -> pd.DataFrame:
-    def _ensure_columns(frame: pd.DataFrame) -> pd.DataFrame:
-        missing = [column for column in MARKER_DB_COLUMNS if column not in frame.columns]
-        if missing:
-            for column in missing:
-                frame[column] = None
-        return frame[MARKER_DB_COLUMNS].copy()
-
-    if marker_db is not None:
-        return _ensure_columns(marker_db.copy())
-
-    resolved = _resolve_marker_db_path(Path(marker_db_path) if marker_db_path is not None else None)
-    resolved = resolved.resolve()
-
-    if cache:
-        cached = _MARKER_CACHE.get(resolved)
-        mtime = resolved.stat().st_mtime
-        if cached and cached[0] == mtime:
-            return cached[1].copy()
-
-    df = pd.read_parquet(resolved)
-    trimmed = _ensure_columns(df)
-    if cache:
-        _MARKER_CACHE[resolved] = (resolved.stat().st_mtime, trimmed)
-    return trimmed.copy()
-
-
-def _guardrail_settings(guardrails: GuardrailConfig | None) -> tuple[Settings | None, int]:
-    if guardrails is None:
-        settings = get_settings()
-        return None, max(1, settings.validation_min_marker_overlap)
-
-    update = guardrails.as_update()
-    if not update:
-        settings = get_settings()
-        return None, max(1, settings.validation_min_marker_overlap)
-
-    base = get_settings()
-    override = base.model_copy(update=update)
-    min_support = max(1, override.validation_min_marker_overlap)
-    return override, min_support
-
-
-def _build_cache_payload(
-    cluster: dict[str, Any],
-    dataset_context: dict[str, Any],
-    *,
-    mode: str,
-) -> dict[str, Any]:
-    return {
-        "version": CACHE_VERSION,
-        "cluster_id": str(cluster.get("cluster_id")),
-        "markers": cluster.get("markers"),
-        "context": dataset_context,
-        "mode": mode,
-    }
-
-
-async def _annotate_batches_async(
-    annotator: Annotator,
-    clusters_payload: list[dict[str, Any]],
-    dataset_context: dict[str, Any],
-    *,
-    batch_options: BatchOptions,
-    cache: AnnotationCacheProtocol | None,
-    request_id: str,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    total = len(clusters_payload)
-    if total == 0:
-        return [], {"total_clusters": 0, "cache_hits": 0, "llm_batches": 0}
-
-    options = batch_options.normalized(total)
-    semaphore = asyncio.Semaphore(options.concurrency)
-    results: dict[str, dict[str, Any]] = {}
-    cache_hits = 0
-    llm_batches = 0
-
-    task_group: list[asyncio.Task[None]] = []
-
-    async def process_chunk(index: int, chunk: list[dict[str, Any]]) -> None:
-        nonlocal cache_hits, llm_batches
-        async with semaphore:
-            pending: list[dict[str, Any]] = []
-            payloads: list[dict[str, Any]] = []
-            if cache is not None:
-                for cluster in chunk:
-                    payload = _build_cache_payload(
-                        cluster,
-                        dataset_context,
-                        mode=annotator.llm_mode,
-                    )
-                    cached = await cache.get(payload)
-                    if cached:
-                        cache_hits += 1
-                        results[str(cluster["cluster_id"])] = dict(cached)
-                    else:
-                        pending.append(cluster)
-                        payloads.append(payload)
-            else:
-                pending = chunk
-
-            if not pending:
-                return
-
-            llm_batches += 1
-            _log(
-                "scanpy.annotate.batch",
-                batch_index=index,
-                batch_size=len(pending),
-                concurrency=options.concurrency,
-                request_id=request_id,
-            )
-
-            start = time.perf_counter()
-
-            def compute() -> dict[str, Any]:
-                return annotator.annotate_batch(pending, dataset_context)
-
-            raw = await _run_in_thread(compute)
-            duration = time.perf_counter() - start
-            if _BATCH_DURATION is not None:
-                _BATCH_DURATION.labels(mode=annotator.llm_mode).observe(duration)
-                _BATCH_COUNTER.labels(mode=annotator.llm_mode).inc()
-                _CLUSTER_COUNTER.labels(mode=annotator.llm_mode).inc(len(pending))
-            for position, cluster in enumerate(pending):
-                cluster_id = str(cluster["cluster_id"])
-                result = dict(raw.get(cluster_id) or {})
-                results[cluster_id] = result
-                if cache is not None:
-                    payload = payloads[position]
-                    await cache.set(payload, result)
-
-    for idx in range(0, total, options.size):
-        chunk = clusters_payload[idx : idx + options.size]
-        task_group.append(asyncio.create_task(process_chunk(idx // options.size, chunk)))
-
-    if task_group:
-        await asyncio.gather(*task_group)
-
-    annotations: list[dict[str, Any]] = []
-    for cluster in clusters_payload:
-        cluster_id = str(cluster["cluster_id"])
-        cluster_result = dict(results.get(cluster_id) or {})
-        cluster_result.setdefault("primary_label", "Unknown or Novel")
-        cluster_result.setdefault("confidence", "Unknown")
-        cluster_result.setdefault("rationale", "")
-        annotations.append(
-            {
-                **cluster_result,
-                "cluster_id": cluster_id,
-                "markers": cluster.get("markers", []),
-            }
-        )
-
-    stats = {
-        "total_clusters": total,
-        "cache_hits": cache_hits,
-        "llm_batches": llm_batches,
-        "batch_size": options.size,
-        "concurrency": options.concurrency,
-        "llm_mode": annotator.llm_mode,
-    }
-    return annotations, stats
-
-
-async def _run_annotation_workflow(
-    clusters_payload: list[dict[str, Any]],
-    *,
-    annotator: Annotator,
-    dataset_context: dict[str, Any],
-    marker_df: pd.DataFrame,
-    guardrails: GuardrailConfig | None,
-    batch_options: BatchOptions,
-    cache: AnnotationCacheProtocol | None,
-    request_id: str,
-) -> tuple[list[dict[str, Any]], DatasetReport, dict[str, Any]]:
-    annotations, stats = await _annotate_batches_async(
-        annotator,
-        clusters_payload,
-        dataset_context,
-        batch_options=batch_options,
-        cache=cache,
-        request_id=request_id,
-    )
-
-    settings_override, min_support = _guardrail_settings(guardrails)
-    crosschecked = await _run_in_thread(
-        crosscheck_batch,
-        annotations,
-        marker_df,
-        species=dataset_context.get("species"),
-        tissue=dataset_context.get("tissue"),
-        min_support=min_support,
-    )
-    report_model: DatasetReport = build_structured_report(
-        annotations,
-        crosschecked,
-        settings_override=settings_override,
-    )
-    stats.update(
-        {
-            "request_id": request_id,
-            "min_marker_overlap": min_support,
-            "guardrail_overrides": guardrails.as_update() if guardrails else {},
-            "summary": report_model.summary.model_dump(),
-        }
-    )
-    return annotations, report_model, stats
 
 
 def _apply_annotations_to_obs(
@@ -636,7 +349,120 @@ def _apply_annotations_to_obs(
             adata.obs.at[obs_idx, mapping_col] = mapping_display
 
 
-async def annotate_anndata_async(
+def report_to_dataframe(report: DatasetReport | ScanpyDatasetReport | dict[str, Any]) -> pd.DataFrame:
+    """Return a dataframe summarising cluster annotations."""
+
+    dataset: DatasetReport
+    if isinstance(report, ScanpyDatasetReport):
+        dataset = report.dataset
+    elif isinstance(report, DatasetReport):
+        dataset = report
+    else:
+        dataset = DatasetReport.model_validate(report)
+
+    records: list[dict[str, Any]] = []
+    for cluster in dataset.clusters:
+        annotation = cluster.annotation
+        records.append(
+            {
+                "cluster_id": cluster.cluster_id,
+                "primary_label": annotation.get("primary_label"),
+                "confidence": cluster.confidence,
+                "status": cluster.status,
+                "ontology_id": annotation.get("ontology_id"),
+                "rationale": annotation.get("rationale"),
+                "warnings": "; ".join(cluster.warnings or []),
+            }
+        )
+    return pd.DataFrame.from_records(records)
+
+
+def _resolve_marker_db_path(marker_db_path: Path | None) -> Path:
+    if marker_db_path is not None:
+        candidate = marker_db_path.expanduser()
+        if candidate.exists():
+            return candidate
+
+    env_path = os.environ.get(MARKER_DB_ENV_VAR)
+    if env_path:
+        candidate = Path(env_path).expanduser()
+        if candidate.exists():
+            return candidate
+
+    settings = get_settings()
+    data_dir = Path(settings.data_dir)
+    default_path = data_dir / "marker_db.parquet"
+    if default_path.exists():
+        return default_path
+
+    ensured_dir = assets.ensure_marker_database(target_dir=data_dir)
+    candidate = ensured_dir / "marker_db.parquet"
+    if candidate.exists():
+        return candidate
+    fallback = assets.ensure_marker_database() / "marker_db.parquet"
+    if fallback.exists():
+        return fallback
+    raise MarkerDatabaseError("marker_db.parquet could not be located or materialised.")
+
+
+def _guardrail_settings(guardrails: GuardrailConfig | None) -> tuple[Settings | None, int]:
+    if guardrails is None:
+        settings = get_settings()
+        return None, max(1, settings.validation_min_marker_overlap)
+
+    update = guardrails.as_update()
+    if not update:
+        settings = get_settings()
+        return None, max(1, settings.validation_min_marker_overlap)
+
+    base = get_settings()
+    override = base.model_copy(update=update)
+    min_support = max(1, override.validation_min_marker_overlap)
+    return override, min_support
+
+
+def _build_cache_payload(
+    cluster: dict[str, Any],
+    dataset_context: dict[str, Any],
+    *,
+    mode: str,
+) -> dict[str, Any]:
+    return {
+        "version": CACHE_VERSION,
+        "cluster_id": str(cluster.get("cluster_id")),
+        "markers": cluster.get("markers"),
+        "context": dataset_context,
+        "mode": mode,
+    }
+
+
+def _chunk(payload: Sequence[dict[str, Any]], size: int) -> Iterable[list[dict[str, Any]]]:
+    for index in range(0, len(payload), size):
+        yield list(payload[index : index + size])
+
+
+def _build_annotations(
+    clusters_payload: Sequence[dict[str, Any]],
+    results: Mapping[str, Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    annotations: list[dict[str, Any]] = []
+    for cluster in clusters_payload:
+        cluster_id = str(cluster["cluster_id"])
+        cluster_result = dict(results.get(cluster_id) or {})
+        cluster_result.setdefault("primary_label", "Unknown or Novel")
+        cluster_result.setdefault("confidence", "Unknown")
+        cluster_result.setdefault("rationale", "")
+        annotations.append(
+            {
+                **cluster_result,
+                "cluster_id": cluster_id,
+                "markers": cluster.get("markers", []),
+            }
+        )
+    return annotations
+
+
+def annotate_anndata(
     adata: AnnData,
     cluster_key: str,
     *,
@@ -650,10 +476,11 @@ async def annotate_anndata_async(
     compute_rankings: bool = True,
     batch_options: BatchOptions | None = None,
     guardrails: GuardrailConfig | None = None,
-    annotation_cache: AnnotationCacheProtocol | None = None,
+    annotation_cache: DiskAnnotationCache | None = None,
     request_id: str | None = None,
+    progress_callback: Callable[[int], None] | None = None,
 ) -> ScanpyAnnotationResult:
-    """Asynchronous variant of annotate_anndata."""
+    """Annotate clusters in an AnnData object using GPT Cell Annotator."""
 
     if cluster_key not in adata.obs:
         raise KeyError(f"Cluster key '{cluster_key}' not found in adata.obs.")
@@ -672,141 +499,141 @@ async def annotate_anndata_async(
     ]
 
     annotator_instance = annotator or Annotator()
+    offline_mode = annotator_instance.llm_mode != "live"
+    if offline_mode:
+        logger.info("scanpy.annotate.offline", extra={"reason": "llm_mode=mock"})
+
     dataset_context: dict[str, str] = {"species": species}
     if tissue:
         dataset_context["tissue"] = tissue
 
+    marker_cache = _marker_cache()
+    resolved_path = Path(marker_db_path).expanduser() if marker_db_path is not None else None
+    try:
+        marker_df = marker_cache.load(
+            frame=marker_db,
+            source_path=resolved_path,
+            resolver=lambda: _resolve_marker_db_path(resolved_path),
+            columns=MARKER_DB_COLUMNS,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - defensive guard
+        raise MarkerDatabaseError(str(exc)) from exc
+
     request = _default_request_id(request_id)
-    marker_df = await _run_in_thread(
-        _load_marker_db,
-        marker_db,
-        marker_db_path,
-        cache=True,
-    )
-    _log(
+    options = batch_options or BatchOptions()
+    chunk_size = options.normalized(len(clusters_payload))
+    cache_hits = 0
+    llm_batches = 0
+    results: dict[str, dict[str, Any]] = {}
+    cache = annotation_cache
+
+    logger.info(
         "scanpy.annotate.start",
-        request_id=request,
-        clusters=len(clusters_payload),
-        species=species,
-        tissue=tissue,
-        batch_size=(batch_options.size if batch_options else BatchOptions().size),
+        extra={
+            "request_id": request,
+            "clusters": len(clusters_payload),
+            "chunk_size": chunk_size,
+            "offline": offline_mode,
+        },
     )
-    annotations, report_model, stats = await _run_annotation_workflow(
-        clusters_payload,
-        annotator=annotator_instance,
-        dataset_context=dataset_context,
-        marker_df=marker_df,
-        guardrails=guardrails,
-        batch_options=batch_options or BatchOptions(),
-        cache=annotation_cache,
+
+    for chunk in _chunk(clusters_payload, chunk_size):
+        pending: list[dict[str, Any]] = []
+        payloads: list[dict[str, Any]] = []
+        for cluster in chunk:
+            if cache is None:
+                pending.append(cluster)
+                continue
+            cache_payload = _build_cache_payload(
+                cluster,
+                dataset_context,
+                mode=annotator_instance.llm_mode,
+            )
+            cached = cache.get(cache_payload)
+            if cached:
+                cache_hits += 1
+                results[str(cluster["cluster_id"])] = dict(cached)
+            else:
+                pending.append(cluster)
+                payloads.append(cache_payload)
+
+        if pending:
+            llm_batches += 1
+            try:
+                batch_result = annotator_instance.annotate_batch(pending, dataset_context)
+            except Exception as exc:  # pragma: no cover - delegated to Annotator tests
+                logger.error(
+                    "scanpy.annotate.batch_failed",
+                    extra={"request_id": request, "error": str(exc)},
+                )
+                raise ScanpyAnnotationError("Annotation batch failed") from exc
+            for index, cluster in enumerate(pending):
+                cluster_id = str(cluster["cluster_id"])
+                annotation = dict(batch_result.get(cluster_id) or {})
+                results[cluster_id] = annotation
+                if cache is not None:
+                    cache_payload = payloads[index]
+                    cache.set(cache_payload, annotation)
+
+        if progress_callback:
+            progress_callback(len(chunk))
+        else:
+            logger.debug(
+                "scanpy.annotate.progress",
+                extra={
+                    "request_id": request,
+                    "processed": len(results),
+                    "cache_hits": cache_hits,
+                    "llm_batches": llm_batches,
+                },
+            )
+
+    annotations = _build_annotations(clusters_payload, results)
+    settings_override, min_support = _guardrail_settings(guardrails)
+    crosschecked = crosscheck_batch(
+        annotations,
+        marker_df,
+        species=dataset_context.get("species"),
+        tissue=dataset_context.get("tissue"),
+        min_support=min_support,
+    )
+    report_model: DatasetReport = build_structured_report(
+        annotations,
+        crosschecked,
+        settings_override=settings_override,
+    )
+    if guardrails and guardrails.as_update():
+        logger.info(
+            "scanpy.annotate.guardrails.override",
+            extra={"request_id": request, "overrides": guardrails.as_update()},
+        )
+
+    report = ScanpyDatasetReport(
+        dataset=report_model,
+        cache_hits=cache_hits,
+        llm_batches=llm_batches,
+        offline_mode=offline_mode,
+        guardrail_min_overlap=min_support,
+        guardrail_overrides=guardrails.as_update() if guardrails else {},
         request_id=request,
+        chunk_size=chunk_size,
     )
 
     _apply_annotations_to_obs(adata, cluster_key, result_prefix, report_model)
-    _log(
+    logger.info(
         "scanpy.annotate.complete",
-        request_id=request,
-        summary=report_model.summary.model_dump(),
-        cache_hits=stats.get("cache_hits", 0),
-        llm_batches=stats.get("llm_batches", 0),
+        extra={
+            "request_id": request,
+            "summary": report_model.summary.model_dump(),
+            "cache_hits": cache_hits,
+            "llm_batches": llm_batches,
+        },
     )
     return ScanpyAnnotationResult(
         adata=adata,
-        report=report_model,
         annotations=annotations,
-        stats=stats,
+        report=report,
     )
-
-
-def annotate_anndata(
-    adata: AnnData,
-    cluster_key: str,
-    *,
-    species: str,
-    tissue: str | None = None,
-    top_n_markers: int = 5,
-    result_prefix: str = "gptca",
-    marker_db: pd.DataFrame | None = None,
-    marker_db_path: str | Path | None = None,
-    annotator: Annotator | None = None,
-    compute_rankings: bool = True,
-    batch_options: BatchOptions | None = None,
-    guardrails: GuardrailConfig | None = None,
-    annotation_cache: AnnotationCacheProtocol | None = None,
-    request_id: str | None = None,
-) -> ScanpyAnnotationResult:
-    """Annotate clusters in an AnnData object using GPT Cell Annotator."""
-
-    try:
-        loop = asyncio.get_running_loop()
-        if loop.is_running():
-            raise RuntimeError(
-                "annotate_anndata cannot be called from an async context. "
-                "Use `await annotate_anndata_async(...)` instead."
-            )
-    except RuntimeError:
-        loop = None
-
-    return asyncio.run(
-        annotate_anndata_async(
-            adata,
-            cluster_key,
-            species=species,
-            tissue=tissue,
-            top_n_markers=top_n_markers,
-            result_prefix=result_prefix,
-            marker_db=marker_db,
-            marker_db_path=marker_db_path,
-            annotator=annotator,
-            compute_rankings=compute_rankings,
-            batch_options=batch_options,
-            guardrails=guardrails,
-            annotation_cache=annotation_cache,
-            request_id=request_id,
-        )
-    )
-
-
-async def annotate_from_markers_async(
-    cluster_markers: Mapping[str, Sequence[str]],
-    *,
-    species: str,
-    tissue: str | None = None,
-    marker_db: pd.DataFrame | None = None,
-    marker_db_path: str | Path | None = None,
-    annotator: Annotator | None = None,
-    batch_options: BatchOptions | None = None,
-    guardrails: GuardrailConfig | None = None,
-    annotation_cache: AnnotationCacheProtocol | None = None,
-    request_id: str | None = None,
-) -> MarkerAnnotationResult:
-    """Annotate clusters from a pre-computed marker mapping."""
-
-    clusters_payload = [
-        {"cluster_id": str(cluster_id), "markers": _unique_ordered(markers)}
-        for cluster_id, markers in cluster_markers.items()
-    ]
-    annotator_instance = annotator or Annotator()
-    dataset_context: dict[str, str] = {"species": species}
-    if tissue:
-        dataset_context["tissue"] = tissue
-    marker_df = await _run_in_thread(
-        _load_marker_db,
-        marker_db,
-        marker_db_path,
-        cache=True,
-    )
-    annotations, report_model, stats = await _run_annotation_workflow(
-        clusters_payload,
-        annotator=annotator_instance,
-        dataset_context=dataset_context,
-        marker_df=marker_df,
-        guardrails=guardrails,
-        batch_options=batch_options or BatchOptions(),
-        cache=annotation_cache,
-        request_id=_default_request_id(request_id),
-    )
-    return MarkerAnnotationResult(annotations=annotations, report=report_model, stats=stats)
 
 
 def annotate_from_markers(
@@ -819,22 +646,38 @@ def annotate_from_markers(
     annotator: Annotator | None = None,
     batch_options: BatchOptions | None = None,
     guardrails: GuardrailConfig | None = None,
-    annotation_cache: AnnotationCacheProtocol | None = None,
+    annotation_cache: DiskAnnotationCache | None = None,
     request_id: str | None = None,
 ) -> MarkerAnnotationResult:
-    return asyncio.run(
-        annotate_from_markers_async(
-            cluster_markers,
-            species=species,
-            tissue=tissue,
-            marker_db=marker_db,
-            marker_db_path=marker_db_path,
-            annotator=annotator,
-            batch_options=batch_options,
-            guardrails=guardrails,
-            annotation_cache=annotation_cache,
-            request_id=request_id,
-        )
+    clusters_payload = [
+        {"cluster_id": str(cluster_id), "markers": _unique_ordered(markers)}
+        for cluster_id, markers in cluster_markers.items()
+    ]
+    dummy_obs = pd.DataFrame(
+        {"cluster": [str(cluster_id) for cluster_id in cluster_markers.keys()]},
+        index=[f"cluster_{idx}" for idx, _ in enumerate(cluster_markers)],
+    )
+    dummy_adata = ad.AnnData(np.zeros((len(dummy_obs), 1)), obs=dummy_obs, var=pd.DataFrame(index=["gene"]))
+    dummy_adata.uns["rank_genes_groups"] = {"names": {str(k): list(v) for k, v in cluster_markers.items()}}
+    result = annotate_anndata(
+        dummy_adata,
+        "cluster",
+        species=species,
+        tissue=tissue,
+        top_n_markers=len(next(iter(cluster_markers.values()))) if cluster_markers else 5,
+        result_prefix="gptca",
+        marker_db=marker_db,
+        marker_db_path=marker_db_path,
+        annotator=annotator,
+        compute_rankings=False,
+        batch_options=batch_options,
+        guardrails=guardrails,
+        annotation_cache=annotation_cache,
+        request_id=request_id,
+    )
+    return MarkerAnnotationResult(
+        annotations=result.annotations,
+        report=result.report,
     )
 
 
@@ -849,7 +692,7 @@ def annotate_rank_genes(
     annotator: Annotator | None = None,
     batch_options: BatchOptions | None = None,
     guardrails: GuardrailConfig | None = None,
-    annotation_cache: AnnotationCacheProtocol | None = None,
+    annotation_cache: DiskAnnotationCache | None = None,
     request_id: str | None = None,
 ) -> MarkerAnnotationResult:
     cluster_markers = _markers_from_rankings(rank_genes_result, top_n_markers)
@@ -893,7 +736,7 @@ def validate_anndata(
     marker_db_path: str | Path | None = None,
     compute_rankings: bool = True,
     guardrails: GuardrailConfig | None = None,
-) -> DatasetReport:
+) -> ScanpyDatasetReport:
     if cluster_key not in adata.obs:
         raise KeyError(f"Cluster key '{cluster_key}' not found in adata.obs.")
     if label_column not in adata.obs:
@@ -921,7 +764,17 @@ def validate_anndata(
             annotation["ontology_id"] = ontology_mapping.get(cluster_id)
         annotations.append(annotation)
 
-    marker_df = _load_marker_db(marker_db, marker_db_path, cache=True)
+    marker_cache = _marker_cache()
+    resolved_path = Path(marker_db_path).expanduser() if marker_db_path is not None else None
+    try:
+        marker_df = marker_cache.load(
+            frame=marker_db,
+            source_path=resolved_path,
+            resolver=lambda: _resolve_marker_db_path(resolved_path),
+            columns=MARKER_DB_COLUMNS,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - defensive guard
+        raise MarkerDatabaseError(str(exc)) from exc
     settings_override, min_support = _guardrail_settings(guardrails)
     crosschecked = crosscheck_batch(
         annotations,
@@ -935,14 +788,25 @@ def validate_anndata(
         crosschecked,
         settings_override=settings_override,
     )
-    _log(
+    logger.info(
         "scanpy.validate.complete",
-        clusters=len(annotations),
-        flagged=report.summary.flagged_clusters,
-        species=species,
-        tissue=tissue,
+        extra={
+            "clusters": len(annotations),
+            "flagged": report.summary.flagged_clusters,
+            "species": species,
+            "tissue": tissue,
+        },
     )
-    return report
+    return ScanpyDatasetReport(
+        dataset=report,
+        cache_hits=0,
+        llm_batches=0,
+        offline_mode=True,
+        guardrail_min_overlap=min_support,
+        guardrail_overrides=guardrails.as_update() if guardrails else {},
+        request_id=_default_request_id(None),
+        chunk_size=len(annotations) or 1,
+    )
 
 
 def _read_adata(path: Path) -> AnnData:
@@ -956,9 +820,11 @@ def _read_adata(path: Path) -> AnnData:
     raise ValueError(f"Unsupported AnnData format: {path.suffix}")
 
 
-def _write_report(report: DatasetReport, path: Path) -> None:
+def _write_report(report: ScanpyDatasetReport, path: Path) -> None:
+    payload = report.model_dump()
+    payload["dataset"] = report.dataset.model_dump()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(report.model_dump(), indent=2), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _apply_preset(args: argparse.Namespace) -> None:
@@ -974,18 +840,93 @@ def _apply_preset(args: argparse.Namespace) -> None:
         args.tissue = preset["tissue"]
 
 
-def _annotation_cache_from_args(args: argparse.Namespace) -> AnnotationCacheProtocol | None:
+def _annotation_cache_from_args(args: argparse.Namespace) -> DiskAnnotationCache | None:
     if args.cache_dir:
         return DiskAnnotationCache(Path(args.cache_dir).expanduser())
-
-    env_dir = os.environ.get(CACHE_DIR_ENV_VAR)
-    if env_dir:
-        return DiskAnnotationCache(Path(env_dir).expanduser())
+    if args.use_cache:
+        cache_root = default_cache_dir() / "annotations"
+        return DiskAnnotationCache(cache_root)
     return None
 
 
-def _build_batch_options(args: argparse.Namespace) -> BatchOptions:
-    return BatchOptions(size=args.batch_size, concurrency=args.concurrency)
+def cmd_annotate(args: argparse.Namespace) -> int:
+    _apply_preset(args)
+    adata = _read_adata(args.input)
+
+    if args.validate_only:
+        report = validate_anndata(
+            adata,
+            args.cluster_key,
+            species=args.species,
+            tissue=args.tissue,
+            label_column=args.label_column,
+            ontology_column=args.ontology_column,
+            top_n_markers=args.top_n_markers,
+            marker_db_path=args.marker_db,
+            compute_rankings=not args.skip_recompute_markers,
+            guardrails=_guardrail_config_from_args(
+                args.guardrail_min_overlap,
+                args.guardrail_force_unknown,
+            ),
+        )
+        if args.json_report:
+            _write_report(report, args.json_report)
+        if args.summary_csv:
+            df = report_to_dataframe(report)
+            args.summary_csv.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(args.summary_csv, index=False)
+        return 0
+
+    cache = _annotation_cache_from_args(args)
+    annotator = Annotator(force_mock=args.offline) if args.offline else Annotator()
+    progress_bar = None
+
+    def _progress_update(delta: int) -> None:
+        if progress_bar is not None:
+            progress_bar.update(delta)
+
+    if tqdm is not None and args.progress and os.isatty(2):
+        progress_bar = tqdm(
+            total=adata.obs[args.cluster_key].nunique(),
+            desc="Annotating",
+            unit="clusters",
+        )
+
+    result = annotate_anndata(
+        adata,
+        args.cluster_key,
+        species=args.species,
+        tissue=args.tissue,
+        top_n_markers=args.top_n_markers,
+        result_prefix=args.prefix,
+        marker_db_path=args.marker_db,
+        annotator=annotator,
+        compute_rankings=not args.skip_recompute_markers,
+        batch_options=BatchOptions(chunk_size=args.chunk_size),
+        guardrails=_guardrail_config_from_args(
+            args.guardrail_min_overlap,
+            args.guardrail_force_unknown,
+        ),
+        annotation_cache=cache,
+        request_id=args.request_id,
+        progress_callback=_progress_update if progress_bar else None,
+    )
+
+    if progress_bar is not None:
+        progress_bar.close()
+
+    output_path = args.output or args.input
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.adata.write(output_path)
+
+    if args.json_report:
+        _write_report(result.report, args.json_report)
+    if args.summary_csv:
+        df = report_to_dataframe(result.report)
+        args.summary_csv.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(args.summary_csv, index=False)
+
+    return 0
 
 
 def _guardrail_config_from_args(
@@ -998,73 +939,6 @@ def _guardrail_config_from_args(
         min_marker_overlap=min_overlap,
         force_unknown_on_fail=force_unknown,
     )
-
-
-def cmd_annotate(args: argparse.Namespace) -> int:
-    _apply_preset(args)
-    cache = _annotation_cache_from_args(args)
-    annotator = Annotator(force_mock=args.offline) if args.offline else Annotator()
-    adata = _read_adata(args.input)
-    result = annotate_anndata(
-        adata,
-        args.cluster_key,
-        species=args.species,
-        tissue=args.tissue,
-        top_n_markers=args.top_n_markers,
-        result_prefix=args.prefix,
-        marker_db_path=args.marker_db,
-        annotator=annotator,
-        compute_rankings=not args.skip_recompute_markers,
-        batch_options=_build_batch_options(args),
-        guardrails=_guardrail_config_from_args(
-            args.guardrail_min_overlap,
-            args.guardrail_force_unknown,
-        ),
-        annotation_cache=cache,
-        request_id=args.request_id,
-    )
-
-    output_path = args.output or args.input
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    result.adata.write(output_path)
-
-    if args.summary_csv:
-        df = report_to_dataframe(result.report)
-        args.summary_csv.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(args.summary_csv, index=False)
-    if args.summary_json:
-        _write_report(result.report, args.summary_json)
-    if args.stats_json:
-        args.stats_json.parent.mkdir(parents=True, exist_ok=True)
-        args.stats_json.write_text(json.dumps(result.stats, indent=2), encoding="utf-8")
-    return 0
-
-
-def cmd_validate(args: argparse.Namespace) -> int:
-    _apply_preset(args)
-    adata = _read_adata(args.input)
-    report = validate_anndata(
-        adata,
-        args.cluster_key,
-        species=args.species,
-        tissue=args.tissue,
-        label_column=args.label_column,
-        ontology_column=args.ontology_column,
-        top_n_markers=args.top_n_markers,
-        marker_db_path=args.marker_db,
-        compute_rankings=not args.skip_recompute_markers,
-        guardrails=_guardrail_config_from_args(
-            args.guardrail_min_overlap,
-            args.guardrail_force_unknown,
-        ),
-    )
-    if args.summary_csv:
-        df = report_to_dataframe(report)
-        args.summary_csv.parent.mkdir(parents=True, exist_ok=True)
-        df.to_csv(args.summary_csv, index=False)
-    if args.summary_json:
-        _write_report(report, args.summary_json)
-    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1100,6 +974,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Number of top markers per cluster to send for annotation.",
     )
     annotate_parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=32,
+        help="Number of clusters to annotate per LLM batch.",
+    )
+    annotate_parser.add_argument(
         "--prefix",
         default="gptca",
         help="Prefix for columns written to adata.obs.",
@@ -1110,46 +990,24 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Destination AnnData path. Defaults to overwriting input.",
     )
     annotate_parser.add_argument(
+        "--json-report",
+        type=Path,
+        help="Optional path to write the full annotation report JSON.",
+    )
+    annotate_parser.add_argument(
         "--summary-csv",
         type=Path,
         help="Optional path to write a per-cluster summary CSV.",
     )
     annotate_parser.add_argument(
-        "--summary-json",
-        type=Path,
-        help="Optional path to write the full annotation report JSON.",
-    )
-    annotate_parser.add_argument(
-        "--stats-json",
-        type=Path,
-        help="Optional path to write batching and telemetry statistics.",
-    )
-    annotate_parser.add_argument(
         "--marker-db",
         type=Path,
-        help="Path to marker_db.parquet. Defaults to env var or cached assets.",
+        help="Override path to marker_db.parquet.",
     )
     annotate_parser.add_argument(
         "--skip-recompute-markers",
         action="store_true",
         help="Assume rank_genes_groups already computed; do not recompute.",
-    )
-    annotate_parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=32,
-        help="Number of clusters per annotator batch.",
-    )
-    annotate_parser.add_argument(
-        "--concurrency",
-        type=int,
-        default=1,
-        help="Maximum concurrent batches (uses asyncio threads).",
-    )
-    annotate_parser.add_argument(
-        "--cache-dir",
-        type=Path,
-        help="Directory for disk cache of annotation responses.",
     )
     annotate_parser.add_argument(
         "--offline",
@@ -1178,80 +1036,36 @@ def _build_parser() -> argparse.ArgumentParser:
         "--request-id",
         help="Attach a custom request identifier for telemetry.",
     )
-    annotate_parser.set_defaults(func=cmd_annotate)
-
-    validate_parser = subparsers.add_parser(
-        "validate",
-        help="Run guardrail validation on existing annotations.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    annotate_parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        help="Directory for annotation cache artifacts.",
     )
-    validate_parser.add_argument("input", type=Path, help="Path to the input AnnData file.")
-    validate_parser.add_argument(
-        "--cluster-key",
-        required=True,
-        help="Column in adata.obs that identifies cluster assignments.",
+    annotate_parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Enable persistent disk cache for annotation responses.",
     )
-    validate_parser.add_argument("--species", required=True, help="Species context.")
-    validate_parser.add_argument(
-        "--preset",
-        choices=sorted(SPECIES_PRESETS),
-        help="Use preset species/tissue.",
+    annotate_parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="Display tqdm progress bar when running in an interactive terminal.",
     )
-    validate_parser.add_argument("--tissue", help="Optional tissue context.")
-    validate_parser.add_argument(
+    annotate_parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Skip LLM annotations and only run guardrail validation.",
+    )
+    annotate_parser.add_argument(
         "--label-column",
-        required=True,
-        help="Existing annotation column to validate.",
+        default="gptca_label",
+        help="Existing annotation column to validate when using --validate-only.",
     )
-    validate_parser.add_argument(
+    annotate_parser.add_argument(
         "--ontology-column",
-        help="Optional ontology column to validate.",
+        help="Optional ontology column to validate when using --validate-only.",
     )
-    validate_parser.add_argument(
-        "--top-n-markers",
-        type=int,
-        default=5,
-        help="Number of top markers per cluster for guardrail checks.",
-    )
-    validate_parser.add_argument(
-        "--marker-db",
-        type=Path,
-        help="Path to marker_db.parquet. Defaults to env var or cached assets.",
-    )
-    validate_parser.add_argument(
-        "--skip-recompute-markers",
-        action="store_true",
-        help="Assume rank_genes_groups already computed; do not recompute.",
-    )
-    validate_parser.add_argument(
-        "--guardrail-min-overlap",
-        type=int,
-        help="Override validation_min_marker_overlap for this run.",
-    )
-    validate_parser.add_argument(
-        "--guardrail-force-unknown",
-        dest="guardrail_force_unknown",
-        action="store_true",
-        default=None,
-        help="Force downgrade to Unknown when guardrails fail.",
-    )
-    validate_parser.add_argument(
-        "--no-guardrail-force-unknown",
-        dest="guardrail_force_unknown",
-        action="store_false",
-        help="Disable downgrade to Unknown when guardrails fail.",
-    )
-    validate_parser.add_argument(
-        "--summary-csv",
-        type=Path,
-        help="Optional path to write per-cluster validation summary CSV.",
-    )
-    validate_parser.add_argument(
-        "--summary-json",
-        type=Path,
-        help="Optional path to write validation report JSON.",
-    )
-    validate_parser.set_defaults(func=cmd_validate)
+    annotate_parser.set_defaults(func=cmd_annotate)
 
     return parser
 
@@ -1264,16 +1078,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 __all__ = [
-    "MARKER_DB_COLUMNS",
     "BatchOptions",
     "DiskAnnotationCache",
     "GuardrailConfig",
     "MarkerAnnotationResult",
     "ScanpyAnnotationResult",
+    "ScanpyDatasetReport",
     "annotate_anndata",
-    "annotate_anndata_async",
     "annotate_from_markers",
-    "annotate_from_markers_async",
     "annotate_rank_genes",
     "main",
     "report_to_dataframe",

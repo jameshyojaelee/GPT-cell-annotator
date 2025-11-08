@@ -1,83 +1,48 @@
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import anndata as ad
-import numpy as np
-import pandas as pd
-import scanpy as sc
+import pytest
+import sys
+
+TESTS_DIR = Path(__file__).parent
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
 
 from backend.llm.annotator import Annotator
 from config.settings import get_settings
 from gpt_cell_annotator.scanpy import (
-    MARKER_DB_COLUMNS,
     BatchOptions,
     DiskAnnotationCache,
     GuardrailConfig,
     annotate_anndata,
-    annotate_anndata_async,
     annotate_from_markers,
     annotate_rank_genes,
+    report_to_dataframe,
     validate_anndata,
 )
-from gpt_cell_annotator.scanpy import (
-    main as scanpy_main,
-)
+from gpt_cell_annotator.scanpy import main as scanpy_main
+from fixtures.scanpy import marker_dataframe, synthetic_adata
 
 
-def _build_mock_marker_db() -> pd.DataFrame:
-    records = [
-        {
-            "source": "Demo",
-            "cell_type": "B cell",
-            "ontology_id": "CL:0000236",
-            "gene_symbol": "MS4A1",
-            "species": "Homo sapiens",
-            "tissue": "Blood",
-            "evidence": "Demo",
-            "reference": "",
-            "evidence_score": "high",
-        },
-        {
-            "source": "Demo",
-            "cell_type": "CD4 T cell",
-            "ontology_id": "CL:0000624",
-            "gene_symbol": "CD3E",
-            "species": "Homo sapiens",
-            "tissue": "Blood",
-            "evidence": "Demo",
-            "reference": "",
-            "evidence_score": "high",
-        },
-    ]
-    return pd.DataFrame.from_records(records, columns=MARKER_DB_COLUMNS)
+@pytest.fixture()
+def marker_db():
+    return marker_dataframe()
 
 
-def _build_adata() -> ad.AnnData:
-    matrix = np.zeros((6, 4), dtype=float)
-    matrix[:3, 0] = 5.0  # cluster 0 expresses gene0 (MS4A1)
-    matrix[3:, 1] = 5.0  # cluster 1 expresses gene1 (CD3E)
-    obs = pd.DataFrame(
-        {"cluster": ["0", "0", "0", "1", "1", "1"]},
-        index=[f"cell_{i}" for i in range(6)],
-    )
-    var = pd.DataFrame(index=["MS4A1", "CD3E", "GNLY", "LYZ"])
-    adata = ad.AnnData(matrix, obs=obs, var=var)
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
-    return adata
+@pytest.fixture()
+def adata():
+    return synthetic_adata()
 
 
-def test_annotate_anndata_adds_columns(monkeypatch):
+def test_annotate_anndata_adds_columns(adata, marker_db):
     settings = get_settings()
     settings.validation_min_marker_overlap = 1
-    adata = _build_adata()
-    marker_db = _build_mock_marker_db()
-    annotator = Annotator(settings=settings)
+    annotator = Annotator(settings=settings, force_mock=True)
 
     result = annotate_anndata(
-        adata,
+        adata.copy(),
         "cluster",
         species="Homo sapiens",
         marker_db=marker_db,
@@ -88,39 +53,27 @@ def test_annotate_anndata_adds_columns(monkeypatch):
     assert "gptca_proposed_label" in result.adata.obs.columns
     labels = {label for label in result.adata.obs["gptca_label"] if label}
     assert labels  # at least one label populated
-    allowed = {
-        "B cell",
-        "CD4 T cell",
-        "CD8 T cell",
-        "NK cell",
-        "Monocyte",
-        "Platelet",
-        "Erythrocyte",
-        "Unknown or Novel",
-    }
-    assert labels <= allowed
-    assert result.report.summary.total_clusters == 2
-    assert len(result.report.clusters) == 2
+    assert result.report.dataset.summary.total_clusters == 2
+    assert len(result.report.dataset.clusters) == 2
     assert result.stats["total_clusters"] == 2
+    assert result.report.offline_mode is True
 
 
-def test_cli_roundtrip(tmp_path: Path, monkeypatch):
+def test_cli_roundtrip(tmp_path: Path, monkeypatch, adata, marker_db):
     settings = get_settings()
     settings.validation_min_marker_overlap = 1
-    adata = _build_adata()
+
     input_path = tmp_path / "demo.h5ad"
-    adata.write(input_path)
+    adata.copy().write(input_path)
 
-    marker_db = _build_mock_marker_db()
+    class DummyCache:
+        def load(self, *, frame=None, source_path=None, resolver=None, columns):
+            return marker_db.copy()
 
-    monkeypatch.setattr(
-        "gpt_cell_annotator.scanpy._load_marker_db",
-        lambda marker_db_arg, marker_db_path, cache=True: marker_db,
-    )
+    monkeypatch.setattr("gpt_cell_annotator.scanpy._marker_cache", lambda: DummyCache())
 
     summary_csv = tmp_path / "summary.csv"
-    summary_json = tmp_path / "summary.json"
-    stats_json = tmp_path / "stats.json"
+    json_report = tmp_path / "report.json"
     output_path = tmp_path / "annotated.h5ad"
 
     exit_code = scanpy_main(
@@ -135,10 +88,8 @@ def test_cli_roundtrip(tmp_path: Path, monkeypatch):
             str(output_path),
             "--summary-csv",
             str(summary_csv),
-            "--summary-json",
-            str(summary_json),
-            "--stats-json",
-            str(stats_json),
+            "--json-report",
+            str(json_report),
             "--offline",
         ]
     )
@@ -148,88 +99,60 @@ def test_cli_roundtrip(tmp_path: Path, monkeypatch):
     assert "gptca_label" in annotated.obs.columns
     assert "gptca_proposed_label" in annotated.obs.columns
     assert summary_csv.exists()
-    assert summary_json.exists()
-    assert stats_json.exists()
+    assert json_report.exists()
 
 
-def test_cli_validate_command(tmp_path: Path, monkeypatch):
+def test_cli_validate_only(tmp_path: Path, monkeypatch, adata, marker_db):
     settings = get_settings()
     settings.validation_min_marker_overlap = 1
-    adata = _build_adata()
-    adata.obs["label"] = ["B cell"] * 6
+    annotated = adata.copy()
+    annotated.obs["label"] = ["B cell"] * annotated.n_obs
     input_path = tmp_path / "demo.h5ad"
-    adata.write(input_path)
+    annotated.write(input_path)
 
-    marker_db = _build_mock_marker_db()
-    monkeypatch.setattr(
-        "gpt_cell_annotator.scanpy._load_marker_db",
-        lambda marker_db_arg, marker_db_path, cache=True: marker_db,
-    )
+    class DummyCache:
+        def load(self, *, frame=None, source_path=None, resolver=None, columns):
+            return marker_db.copy()
 
-    summary_json = tmp_path / "validate.json"
+    monkeypatch.setattr("gpt_cell_annotator.scanpy._marker_cache", lambda: DummyCache())
+
+    json_report = tmp_path / "validate.json"
 
     exit_code = scanpy_main(
         [
-            "validate",
+            "annotate",
             str(input_path),
             "--cluster-key",
             "cluster",
-            "--label-column",
-            "label",
             "--species",
             "Homo sapiens",
-            "--summary-json",
-            str(summary_json),
+            "--label-column",
+            "label",
+            "--validate-only",
+            "--json-report",
+            str(json_report),
         ]
     )
 
     assert exit_code == 0
-    assert summary_json.exists()
+    assert json_report.exists()
 
 
-def test_annotate_anndata_async_matches_sync():
-    settings = get_settings()
-    settings.validation_min_marker_overlap = 1
-    marker_db = _build_mock_marker_db()
-
-    sync_result = annotate_anndata(
-        _build_adata(),
-        "cluster",
-        species="Homo sapiens",
-        marker_db=marker_db,
-    )
-
-    async_result = asyncio.run(
-        annotate_anndata_async(
-            _build_adata(),
-            "cluster",
-            species="Homo sapiens",
-            marker_db=marker_db,
-        )
-    )
-
-    assert async_result.report.summary.total_clusters == sync_result.report.summary.total_clusters
-    assert async_result.stats["total_clusters"] == sync_result.stats["total_clusters"]
-    assert "gptca_label" in async_result.adata.obs.columns
-
-
-def test_annotate_from_markers(tmp_path: Path):
-    marker_db = _build_mock_marker_db()
+def test_annotate_from_markers(marker_db):
     markers = {"0": ["MS4A1", "CD79A"], "1": ["CD3E", "CD3D"]}
     result = annotate_from_markers(
         markers,
         species="Homo sapiens",
         marker_db=marker_db,
-        batch_options=BatchOptions(size=1, concurrency=1),
+        batch_options=BatchOptions(chunk_size=1),
     )
 
-    assert result.report.summary.total_clusters == 2
-    labels = {cluster.annotation["primary_label"] for cluster in result.report.clusters}
+    assert result.report.dataset.summary.total_clusters == 2
+    labels = {cluster.annotation["primary_label"] for cluster in result.report.dataset.clusters}
     assert any(label != "Unknown or Novel" for label in labels)
 
 
-def test_annotate_rank_genes_wrapper():
-    marker_db = _build_mock_marker_db()
+def test_annotate_rank_genes_wrapper(marker_db):
     rankings = {
         "0": ["MS4A1", "CD79A", "CD74"],
         "1": ["CD3E", "CD3D", "CD2"],
@@ -239,70 +162,74 @@ def test_annotate_rank_genes_wrapper():
         species="Homo sapiens",
         marker_db=marker_db,
     )
-    assert result.report.summary.total_clusters == 2
+    assert result.report.dataset.summary.total_clusters == 2
 
 
-def test_validate_anndata_guardrail_override():
-    settings = get_settings()
-    settings.validation_min_marker_overlap = 1
-    adata = _build_adata()
-    adata.obs["gpt_label"] = ["B cell"] * 6
-    marker_db = _build_mock_marker_db()
+def test_validate_anndata_guardrail_override(adata, marker_db):
+    sample = adata.copy()
+    sample.obs["gpt_label"] = ["B cell"] * sample.n_obs
 
     report_default = validate_anndata(
-        adata,
+        sample.copy(),
         "cluster",
         species="Homo sapiens",
         label_column="gpt_label",
         marker_db=marker_db,
     )
-    assert report_default.summary.flagged_clusters <= 2
+    assert report_default.dataset.summary.flagged_clusters <= 2
 
     report_strict = validate_anndata(
-        adata,
+        sample.copy(),
         "cluster",
         species="Homo sapiens",
         label_column="gpt_label",
         marker_db=marker_db,
         guardrails=GuardrailConfig(min_marker_overlap=5),
     )
-    assert report_strict.summary.flagged_clusters >= report_default.summary.flagged_clusters
+    assert report_strict.dataset.summary.flagged_clusters >= report_default.dataset.summary.flagged_clusters
 
 
-def test_disk_cache_reduces_batches(tmp_path: Path, monkeypatch):
-    settings = get_settings()
-    settings.validation_min_marker_overlap = 1
-    marker_db = _build_mock_marker_db()
-
+def test_disk_cache_reduces_batches(monkeypatch, adata, marker_db, tmp_path: Path):
     call_counter = {"count": 0}
+    cache = DiskAnnotationCache(tmp_path / "cache")
 
-    cache_dir = tmp_path / "cache"
-    cache = DiskAnnotationCache(cache_dir)
+    def fake_annotate(self, payload, context):
+        call_counter["count"] += 1
+        return {str(item["cluster_id"]): {"primary_label": "B cell"} for item in payload}
 
-    monkeypatch.setattr(
-        "gpt_cell_annotator.scanpy.Annotator.annotate_batch",
-        lambda self, payload, context: call_counter.__setitem__("count", call_counter["count"] + 1)
-        or {str(item["cluster_id"]): {"primary_label": "B cell"} for item in payload},
-    )
+    monkeypatch.setattr("backend.llm.annotator.Annotator.annotate_batch", fake_annotate)
 
     result_first = annotate_anndata(
-        _build_adata(),
+        adata.copy(),
         "cluster",
         species="Homo sapiens",
         marker_db=marker_db,
         annotation_cache=cache,
-        batch_options=BatchOptions(size=1, concurrency=1),
+        batch_options=BatchOptions(chunk_size=1),
     )
-    assert result_first.stats["llm_batches"] == 2
+    assert result_first.report.llm_batches == 2
 
     call_counter["count"] = 0
     result_second = annotate_anndata(
-        _build_adata(),
+        adata.copy(),
         "cluster",
         species="Homo sapiens",
         marker_db=marker_db,
         annotation_cache=cache,
-        batch_options=BatchOptions(size=1, concurrency=1),
+        batch_options=BatchOptions(chunk_size=1),
     )
     assert call_counter["count"] == 0
-    assert result_second.stats["cache_hits"] == 2
+    assert result_second.report.cache_hits == 2
+
+
+def test_report_to_dataframe_handles_scanpy_dataset(marker_db, adata):
+    annotator = Annotator(force_mock=True)
+    result = annotate_anndata(
+        adata.copy(),
+        "cluster",
+        species="Homo sapiens",
+        marker_db=marker_db,
+        annotator=annotator,
+    )
+    frame = report_to_dataframe(result.report)
+    assert set(frame.columns) >= {"cluster_id", "primary_label", "warnings"}

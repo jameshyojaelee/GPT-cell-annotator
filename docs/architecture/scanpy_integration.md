@@ -5,27 +5,24 @@ This document inventories the current Scanpy/AnnData workflow, captures constrai
 ## Current Implementation Snapshot
 
 ### Annotate Pipeline (Python API)
-- Entry point is `annotate_anndata` (`gpt_cell_annotator/scanpy.py`), which defers to the async variant after asserting we are not already inside an event loop.
-- `annotate_anndata_async` optionally recomputes `rank_genes_groups` (via Scanpy) and builds a `{cluster_id -> markers}` payload from `adata.uns["rank_genes_groups"]["names"]`.
-- Payloads flow into `_annotate_batches_async`, which:
-  - Normalises batching (`BatchOptions`) and uses an `asyncio` semaphore for concurrency.
-  - Checks an optional `AnnotationCacheProtocol` (default implementation: `DiskAnnotationCache`) before calling the `backend.llm.annotator.Annotator`.
-  - Writes results back to the cache asynchronously and tallies batch/counter telemetry (Prometheus if available).
-- `_run_annotation_workflow` feeds annotations through guardrail cross-checking (`backend.validation.crosscheck`) and builds a `DatasetReport` (`backend.validation.report`), returning stats (`cache_hits`, `llm_batches`, overrides, request_id).
+- Entry point is the synchronous `annotate_anndata` (`gpt_cell_annotator/scanpy.py`); it handles rank gene computation and chunked batching inline.
+- Cluster payloads flow through `_chunk` sized batches (`BatchOptions(chunk_size=...)`):
+  - Each chunk checks a `DiskAnnotationCache` before invoking `backend.llm.annotator.Annotator`.
+  - Cache misses trigger `annotator.annotate_batch`; results are written back to disk synchronously.
+- Marker databases are served via `MarkerDatabaseCache`, which resolves paths, caches them on disk (`~/.cache/gpt-cell-annotator`), and mirrors them in-memory keyed by mtime.
+- `_build_annotations` + `_guardrail_settings` feed annotations into `backend.validation.crosscheck.crosscheck_batch`, producing a `DatasetReport` that is wrapped in `ScanpyDatasetReport` with cache/guardrail/offline metadata and logging hooks.
 - `_apply_annotations_to_obs` writes results into `adata.obs` (`gptca_label`, `gptca_proposed_label`, `gptca_status`, etc.) and mirrors structured metadata for downstream consumption.
 
 ### CLI Surface
-- `python -m gpt_cell_annotator.scanpy` exposes two subcommands:
-  - `annotate`: wraps the API flow above, handles I/O (h5ad/loom), configures presets, optional offline mode (`Annotator(force_mock=True)`), and emits JSON/CSV/statistics outputs.
-  - `validate`: re-runs guardrail checks against existing annotations (`validate_anndata`).
-- `gpt_cell_annotator/cli.py` registers these via the top-level `gca` CLI (`gca scanpy ...`), materialising bundled assets before delegating.
-- Request scoping uses `GCA_REQUEST_ID` when present and enables structlog + Prometheus metrics when optional extras are installed.
+- `python -m gpt_cell_annotator.scanpy` exposes a single `annotate` subcommand that can optionally run guardrail-only validation via `--validate-only`.
+- CLI flags cover AnnData IO, species presets, offline toggles, chunk size, caching (`--cache-dir`/`--use-cache`), and JSON/CSV report outputs.
+- `gpt_cell_annotator/cli.py` registers the command via the top-level `gca` CLI (`gca scanpy ...`), materialising bundled assets before delegating.
+- Logging relies on the stdlib logger (`scanpy.annotate.*`, `scanpy.validate.*`) with optional request IDs; telemetry extras are now opt-in via the `observability` extra.
 
 ### Test Coverage
 - `tests/test_scanpy_integration.py` covers:
-  - Sync/async parity (`annotate_anndata` vs. `annotate_anndata_async`).
-  - CLI annotate/validate round-trips (ensuring outputs, offline flag behaviour).
-  - Disk cache hit reduction, guardrail configuration overrides, helper wrappers (`annotate_from_markers`, `annotate_rank_genes`).
+- CLI annotate / `--validate-only` round-trips (ensuring `--offline`, JSON report behaviour).
+- Disk cache hit reduction, guardrail configuration overrides, helper wrappers (`annotate_from_markers`, `annotate_rank_genes`).
 - Fixtures construct synthetic AnnData objects and stub the marker DB loader to avoid network/disk dependencies.
 
 ## System Diagram
@@ -58,14 +55,14 @@ flowchart LR
 | Asset | Source / materialisation | Default location | Overrides |
 | --- | --- | --- | --- |
 | `marker_db.parquet` | `assets.ensure_marker_database` (downloads or bundled) | `settings.data_dir / marker_db.parquet` | `GCA_MARKER_DB_PATH` env var or CLI `--marker-db` |
-| Marker cache | `_MARKER_CACHE` in-process map keyed by file mtime | In-memory per interpreter | Flushes only on restart; proposed disk cache will supersede. |
-| Annotation cache | `DiskAnnotationCache` (async JSON files) | `cache_dir` supplied by caller | `GCA_CACHE_DIR` planned to pick defaults (`~/.cache/gpt-cell-annotator`). |
+| Marker cache | `MarkerDatabaseCache` (memory + on-disk Parquet mirror) | `~/.cache/gpt-cell-annotator/marker-db` | `GCA_CACHE_DIR` to relocate shared cache. |
+| Annotation cache | `DiskAnnotationCache` (JSON files) | `cache_dir` supplied by caller or `~/.cache/gpt-cell-annotator/annotations` | `GCA_CACHE_DIR` + CLI `--cache-dir`. |
 | Assets home | `assets.ensure_all_assets` | `~/.cache/gpt-cell-annotator` | `GPT_CELL_ANNOTATOR_ASSETS_HOME`, CLI `--assets-home`. |
 
 ## Adjusted Scope Summary
 
-- **Removed (de-scoped)**: async coroutine entrypoint as default, helper wrappers (`annotate_rank_genes`, `annotate_from_markers`), structlog/Prometheus deliverable, standalone `gca scanpy validate` command.
-- **Added (new focus)**: compatibility matrix & tox automation, migration guide, marker asset governance checklist, offline/caching first-class features, performance checks (cached vs. uncached).
+- **Removed (de-scoped)**: asynchronous annotate entrypoint, concurrency-based batching, default structlog/Prometheus wiring, standalone `gca scanpy validate` command.
+- **Added (new focus)**: chunk-size batching, persistent marker DB cache, `ScanpyDatasetReport` wrapper, offline-mode reporting, CLI `--validate-only` flag, benchmark + migration docs.
 
 ## Phased Roadmap
 
