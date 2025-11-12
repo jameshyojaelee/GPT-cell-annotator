@@ -136,6 +136,15 @@ Refer to [`docs/development.md`](docs/development.md) for contributor environmen
 - Set `GCA_MARKER_DB_PATH` to point at external marker databases and `GCA_CACHE_DIR` to persist annotation responses when working offline.
 - Install the `[api]` extra to expose Prometheus counters for batch throughput and latency when running long-lived services.
 
+### Backend async cache behaviour
+
+The async cache helper (`backend/cache/async_cache.py`) always runs synchronous `compute`
+callables inside `asyncio.to_thread` so FastAPI and Streamlit event loops stay
+responsive. Async callables are awaited directly, and the helper still accepts
+awaitable return values from sync functions. When providing a synchronous `compute`
+callback, avoid touching asyncio primitives directly (use regular Python code) because
+execution occurs on a worker thread.
+
 ## Seurat Workflow (R)
 
 - Install the R interface with `pak::pkg_install("github::jameshyojaelee/CellAnnot-GPT?subdir=clients/r/gptcellannotator")` or run `Rscript clients/r/scripts/install_github.R`.

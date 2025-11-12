@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
+import time
 
 import pytest
 
@@ -72,3 +75,34 @@ async def test_get_cached_or_run_with_cache_and_sync_compute():
     assert from_cache_second
     assert second == {"result": "fresh"}
     assert calls["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_get_cached_or_run_offloads_sync_compute():
+    loop = asyncio.get_running_loop()
+    loop_thread = threading.get_ident()
+    marker = {"thread": None}
+    monitor = {"finished_at": None}
+
+    async def heartbeat():
+        await asyncio.sleep(0.05)
+        monitor["finished_at"] = loop.time()
+
+    def compute():
+        marker["thread"] = threading.get_ident()
+        time.sleep(0.2)
+        return {"status": "done"}
+
+    monitor_task = asyncio.create_task(heartbeat())
+    start = loop.time()
+    result, from_cache = await get_cached_or_run(None, {"key": "slow"}, compute)
+    end = loop.time()
+    await monitor_task
+
+    assert not from_cache
+    assert result == {"status": "done"}
+    assert marker["thread"] is not None
+    assert marker["thread"] != loop_thread
+    assert monitor["finished_at"] is not None
+    assert monitor["finished_at"] - start < 0.15
+    assert end - start >= 0.2

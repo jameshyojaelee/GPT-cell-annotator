@@ -1,4 +1,8 @@
-"""Async cache helper for annotator integration."""
+"""Async cache helper for annotator integration.
+
+Synchronous ``compute`` callables are always executed in a worker thread to avoid
+blocking the event loop, while async callables are awaited directly.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +32,10 @@ async def get_cached_or_run(
 
 
 async def _evaluate(func: Callable[[], Awaitable[Any]] | Callable[[], Any]) -> Any:
-    result = func()
+    if inspect.iscoroutinefunction(func):
+        return await func()
+
+    result = await asyncio.to_thread(func)
     if inspect.isawaitable(result):
         return await result
-    return await asyncio.to_thread(lambda: result)
+    return result
