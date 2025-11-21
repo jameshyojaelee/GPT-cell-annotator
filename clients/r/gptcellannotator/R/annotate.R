@@ -52,6 +52,14 @@ gptca_annotate_markers <- function(
     cli::cli_warn("No API base URL configured; using CLI path instead.")
     use_cli <- TRUE
   }
+  if (use_cli && !gptca_cli_available(config)) {
+    cli::cli_abort(
+      c(
+        "CLI mode requested but {.code gca} was not found.",
+        "i" = "Install the Python package (`pip install gpt-cell-annotator`) and ensure `gca` is on PATH or set {.envvar GPTCA_CLI_PATH}."
+      )
+    )
+  }
 
   clusters <- gptca_prepare_clusters(
     markers = markers,

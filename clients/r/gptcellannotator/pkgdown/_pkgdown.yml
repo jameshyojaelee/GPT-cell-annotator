@@ -14,15 +14,13 @@ repo:
 home:
   title: GPT Cell Annotator for R
   description: >
-    R interface to the GPT Cell Annotator backend with Seurat integration,
-    validation guardrails, and offline CLI support.
+    R interface to the GPT Cell Annotator engine with Seurat integration,
+    validation guardrails, and CLI-first offline support (optional REST).
   links:
     - text: Seurat workflow guide
       href: https://github.com/jameshyojaelee/CellAnnot-GPT/blob/main/docs/seurat_integration.md
     - text: Scanpy integration
       href: https://github.com/jameshyojaelee/CellAnnot-GPT/blob/main/docs/scanpy_integration.md
-    - text: REST API schema
-      href: https://github.com/jameshyojaelee/CellAnnot-GPT/blob/main/schemas/api/openapi.yaml
 
 navbar:
   structure:
