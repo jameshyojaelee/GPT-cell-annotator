@@ -2,30 +2,30 @@
 #'
 #' @description
 #' Creates or retrieves configuration used by `gptcellannotator` to talk to the
-#' backend REST service or shell out to the CLI.
+#' backend REST service or shell out to the CLI (default).
 #'
-#' @param base_url Base URL for the REST service. Defaults to the
-#'   `GPTCA_BASE_URL` environment variable or `https://api.gpt-cell-annotator.org`.
-#' @param api_key API key passed as `Authorization: Bearer` header when present.
-#'   Defaults to `GPTCA_API_KEY`.
-#' @param cli_path Optional path to the fallback CLI (`gca`). If `NULL`, the CLI
-#'   is auto-detected using `Sys.which("gca")`.
+#' @param base_url Optional base URL for the REST service. Defaults to
+#'   `GPTCA_BASE_URL`; set to `NA` to disable HTTP calls.
+#' @param api_key API key passed as `Authorization: Bearer` header when present
+#'   (defaults to `GPTCA_API_KEY`).
+#' @param cli_path Optional path to the CLI (`gca`). If `NULL`, the CLI is
+#'   auto-detected using `Sys.which("gca")`.
 #' @param timeout Timeout in seconds for HTTP requests.
 #' @param retry_max Maximum retry attempts for transient HTTP failures.
 #' @param retry_backoff Initial backoff in seconds for retries (exponential).
-#' @param offline Logical flag forcing the CLI fallback.
+#' @param offline Logical flag forcing the CLI path. Defaults to `TRUE`.
 #' @param user_agent Custom user agent string appended to requests.
 #'
 #' @return A `GptcaConfig` object.
 #' @export
 gptca_config <- function(
-  base_url = Sys.getenv("GPTCA_BASE_URL", unset = "https://api.gpt-cell-annotator.org"),
+  base_url = Sys.getenv("GPTCA_BASE_URL", unset = NA_character_),
   api_key = Sys.getenv("GPTCA_API_KEY", unset = NA_character_),
   cli_path = Sys.getenv("GPTCA_CLI_PATH", unset = ""),
   timeout = 120,
   retry_max = 3,
   retry_backoff = 1,
-  offline = FALSE,
+  offline = TRUE,
   user_agent = utils::packageName()
 ) {
   if (!nzchar(cli_path)) {
@@ -53,7 +53,7 @@ gptca_config <- function(
 print.GptcaConfig <- function(x, ...) {
   cli::cli_text("{.strong GPT Cell Annotator configuration}")
   cli::cli_ul(c(
-    "base_url" = x$base_url,
+    "base_url" = x$base_url %||% "<unset>",
     "api_key" = ifelse(is.null(x$api_key), "<unset>", "<hidden>"),
     "cli_path" = ifelse(is.null(x$cli_path), "<not-found>", x$cli_path),
     "timeout" = sprintf("%.1f sec", x$timeout),
@@ -105,8 +105,11 @@ gptca_config_reset <- function() {
 .gptca_state <- new.env(parent = emptyenv())
 
 normalize_base_url <- function(url) {
-  if (!rlang::is_string(url) || !nzchar(url)) {
-    cli::cli_abort("{.arg base_url} must be a non-empty string.")
+  if (is.null(url) || (length(url) == 1 && is.na(url)) || !nzchar(url)) {
+    return(NULL)
+  }
+  if (!rlang::is_string(url)) {
+    cli::cli_abort("{.arg base_url} must be a string or NA.")
   }
   url <- trimws(url)
   url <- sub("/+$", "", url)

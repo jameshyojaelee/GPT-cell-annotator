@@ -47,6 +47,11 @@ gptca_annotate_markers <- function(
   if (is.null(offline)) {
     offline <- config$offline
   }
+  use_cli <- isTRUE(offline)
+  if (!use_cli && is.null(config$base_url)) {
+    cli::cli_warn("No API base URL configured; using CLI path instead.")
+    use_cli <- TRUE
+  }
 
   clusters <- gptca_prepare_clusters(
     markers = markers,
@@ -68,7 +73,7 @@ gptca_annotate_markers <- function(
     cli::cli_abort("`return_validated = FALSE` is only supported for a single cluster.")
   }
 
-  if (!isTRUE(offline)) {
+  if (!use_cli) {
     result <- try(
       gptca_request_backend(clusters, dataset_context, config, return_validated),
       silent = TRUE

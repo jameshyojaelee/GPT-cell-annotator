@@ -8,9 +8,9 @@ Authors@R: c(
            role = c("aut", "cre"))
   )
 Description: Provides an R interface for submitting marker genes or Seurat objects
-    to the GPT Cell Annotator backend. Handles REST communication, CLI offline
-    fallback, validation guardrails, and visualization helpers for single-cell
-    workflows.
+    to the GPT Cell Annotator engine via the CLI (offline by default) or an
+    optional REST endpoint. Handles validation guardrails and visualisation
+    helpers for single-cell workflows.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
@@ -31,7 +31,6 @@ Suggests:
     covr,
     devtools,
     ggplot2,
-    httptest2,
     knitr,
     lintr,
     pak,

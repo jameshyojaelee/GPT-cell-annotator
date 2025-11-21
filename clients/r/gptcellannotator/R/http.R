@@ -6,6 +6,10 @@ gptca_http_post <- function(path, body, config) {
     cli::cli_abort("{.arg config} must be a {.cls GptcaConfig}.")
   }
 
+  if (is.null(config$base_url) || !nzchar(config$base_url)) {
+    cli::cli_abort("API base URL is not configured; enable REST by setting {.envvar GPTCA_BASE_URL} or passing {.arg base_url} to {.fn gptca_config}.")
+  }
+
   url <- paste0(config$base_url, path)
   req <- httr2::request(url)
   req <- httr2::req_method(req, "POST")

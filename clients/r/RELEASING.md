@@ -46,5 +46,5 @@
 ## Post-release
 
 - Increment the development version (append `.9000`) in `DESCRIPTION`.
-- Communicate schema or contract changes with frontend/backend teams.
+- Communicate schema or contract changes with the Python/Scanpy maintainers.
 - Keep the pkgdown site updated with the release notes.

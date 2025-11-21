@@ -23,7 +23,7 @@ Follow this mini checklist whenever you cut a new Python release:
 - [ ] Regenerate assets or marker databases if needed.
 - [x] Run the full validation suite:
   ```bash
-  make install          # installs api/ui/scanpy/dev extras
+  make install          # installs scanpy/dev extras
   make lint
   make test
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 poetry run pytest tests/test_scanpy_integration.py -k cli
@@ -51,37 +51,21 @@ Follow this mini checklist whenever you cut a new Python release:
   ```
 - [ ] Verify installation on a clean machine:
   ```bash
-  pip install "gpt-cell-annotator[api,scanpy]"
+  pip install "gpt-cell-annotator[scanpy]"
   gca --version
   ```
-- [x] Archive the installation matrix and smoke-test notes under `docs/reports/releases/${VERSION}/install_matrix.md`.
 
-## 4. Build & Push Docker Images
-- [ ] Build the release image:
-  ```bash
-  docker build -t gpt-cell-annotator:${VERSION} .
-  ```
-- [ ] Tag & push to GHCR:
-  ```bash
-  docker tag gpt-cell-annotator:${VERSION} ghcr.io/jameshyojaelee/gpt-cell-annotator:${VERSION}
-  docker push ghcr.io/jameshyojaelee/gpt-cell-annotator:${VERSION}
-  ```
-- [ ] Record image digest (`docker inspect --format='{{index .RepoDigests 0}}' ...`) and add to the release notes.
-
-## 5. Git Tag & Release Notes
+## 4. Git Tag & Release Notes
 - [ ] Commit the version bump and changelog updates.
 - [ ] Tag the release: `git tag -a v${VERSION} -m "Release v${VERSION}"`
 - [ ] Push commits and tags: `git push && git push origin v${VERSION}`
 - [ ] Draft GitHub Release notes including:
   - PyPI package link & SHA256 checksums (`shasum -a 256 dist/*`)
-  - Docker image digest
-  - Highlights (new CLI flags, API changes, docs)
+  - Highlights (new CLI flags, Scanpy improvements, docs)
 
-## 6. Post-release
+## 5. Post-release
 - [ ] Notify downstream integrators (Slack/email) with upgrade instructions.
 - [ ] Close the milestone and open a new one for the next cycle.
 - [ ] Reset development version (e.g., bump to `0.x.y-dev`).
 
 Happy releasing!
-
-_Release 0.2.0 provenance: see `docs/reports/releases/0.2.0/` for smoke tests, install matrix, hashes, and release notes._

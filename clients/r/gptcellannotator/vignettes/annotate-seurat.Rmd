@@ -18,14 +18,10 @@ knitr::opts_chunk$set(
 # Overview
 
 `gptcellannotator` provides an end-to-end bridge from Seurat marker discovery to
-the GPT Cell Annotator backend. This vignette walks through the recommended
-pipeline: preparing marker tables, calling the API, applying validation
-guardrails, and visualising results on a UMAP embedding.
-
-The package defaults to HTTPS calls against the FastAPI service but can fall
-back to the Python CLI (`gca annotate`) when credentials or connectivity are
-unavailable. All examples below assume access to the REST API. The offline CLI
-workflow is covered at the end.
+the GPT Cell Annotator engine. It is CLI-first (offline by default) and can call
+an optional REST endpoint when provided with a base URL and API key. This
+vignette walks through preparing marker tables, invoking the annotator, applying
+validation guardrails, and visualising results on a UMAP embedding.
 
 # Setup
 
@@ -35,15 +31,14 @@ library(Seurat)
 library(tibble)
 ```
 
-Configure the base URL and API key once per session. Environment variables
-(`GPTCA_BASE_URL`, `GPTCA_API_KEY`) take precedence, but explicit configuration
-is clearer in reproducible scripts.
+Configure the CLI path once per session. Environment variables
+(`GPTCA_CLI_PATH`) take precedence, but explicit configuration is clearer in
+reproducible scripts.
 
 ```{r}
 cfg <- gptca_config(
-  base_url = "https://api.gpt-cell-annotator.org",
-  timeout = 60,
-  retry_max = 3
+  offline = TRUE,
+  cli_path = Sys.which("gca")
 )
 gptca_config_set(cfg)
 ```
@@ -121,34 +116,37 @@ gptca_plot_umap(pbmc)
 Because the plot is built with `ggplot2` you can further customise scales,
 themes, or overlays using standard syntax.
 
-# CLI fallback workflow
+# Optional REST workflow
 
-If the REST API is unreachable, the package can shell out to `gca annotate`
-instead. Install the CLI (`pip install gpt-cell-annotator`), ensure the `gca`
-binary is on your `PATH`, and toggle offline mode in the config.
+To target an external REST deployment instead of the CLI, supply a base URL and
+API key:
 
-```{r cli-fallback, eval=FALSE}
-offline_cfg <- gptca_config(offline = TRUE, cli_path = Sys.which("gca"))
+```{r rest-mode, eval=FALSE}
+rest_cfg <- gptca_config(
+  offline = FALSE,
+  base_url = "https://api.gpt-cell-annotator.org",
+  api_key = Sys.getenv("GPTCA_API_KEY")
+)
 annotations <- gptca_annotate_markers(
   markers,
   species = "Homo sapiens",
-  config = offline_cfg
+  config = rest_cfg
 )
 ```
 
 The CLI path is automatically discovered from `GPTCA_CLI_PATH` or the system
-`PATH`. Validation guardrails are still executed because the Python CLI ships
-with the marker database assets.
+`PATH`. Both modes apply the same validation guardrails and return the same
+schema.
 
 # Troubleshooting
 
-- **401/403 errors** – check the API key and whether the backend expects custom
-  headers.
-- **429 rate limits** – reduce batch sizes or introduce throttling. The package
-  will automatically retry transient 429/5xx errors with exponential backoff.
+- **`gca` binary not found** – install the Python package and ensure
+  `Sys.which("gca")` resolves the CLI; override with `GPTCA_CLI_PATH`.
 - **Validation disagreements** – inspect `annotations$clusters$validation` for
   missing markers or contradictory evidence. You can also access the raw JSON
   via `annotations$raw`.
+- **REST-specific errors (401/429)** – only when `offline = FALSE`. Check API
+  credentials and retry settings in `gptca_config()`.
 
 For more recipes and automation tips, visit the pkgdown site once published or
 open an issue on GitHub.

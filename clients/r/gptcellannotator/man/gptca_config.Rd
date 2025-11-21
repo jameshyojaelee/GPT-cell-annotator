@@ -6,17 +6,17 @@
 \alias{gptca_config_reset}
 \title{Configure GPT Cell Annotator backend access}
 \description{
-Create or manage configuration objects used to communicate with the GPT Cell Annotator backend. The configuration stores base URLs, authentication, CLI fallbacks, and retry policies.
+Create or manage configuration objects used to communicate with the GPT Cell Annotator backend. The configuration stores base URLs (for optional REST calls), authentication, CLI paths, and retry policies.
 }
 \usage{
 gptca_config(
-  base_url = Sys.getenv("GPTCA_BASE_URL", unset = "https://api.gpt-cell-annotator.org"),
+  base_url = Sys.getenv("GPTCA_BASE_URL", unset = NA_character_),
   api_key = Sys.getenv("GPTCA_API_KEY", unset = NA_character_),
   cli_path = Sys.getenv("GPTCA_CLI_PATH", unset = ""),
   timeout = 120,
   retry_max = 3,
   retry_backoff = 1,
-  offline = FALSE,
+  offline = TRUE,
   user_agent = utils::packageName()
 )
 
@@ -27,11 +27,11 @@ gptca_config_get(default = gptca_config())
 gptca_config_reset()
 }
 \arguments{
-\item{base_url}{Base URL for the FastAPI backend.}
+\item{base_url}{Optional base URL for the REST backend. Set to \code{NA} to skip HTTP calls.}
 
 \item{api_key}{Optional API key passed as a Bearer token.}
 
-\item{cli_path}{Path to the `gca` CLI for offline fallback; detected automatically when not supplied.}
+\item{cli_path}{Path to the \code{gca} CLI (used by default); detected automatically when not supplied.}
 
 \item{timeout}{Request timeout in seconds.}
 
@@ -39,7 +39,7 @@ gptca_config_reset()
 
 \item{retry_backoff}{Initial delay in seconds applied to exponential backoff.}
 
-\item{offline}{Logical flag forcing CLI mode.}
+\item{offline}{Logical flag forcing CLI mode (default \code{TRUE}).}
 
 \item{user_agent}{Additional user-agent suffix appended to requests.}
 
@@ -52,7 +52,7 @@ gptca_config_reset()
 }
 \examples{
 if (interactive()) {
-  cfg <- gptca_config(base_url = "https://api.gpt-cell-annotator.org", timeout = 60)
+  cfg <- gptca_config(cli_path = Sys.which("gca"))
   gptca_config_set(cfg)
 }
 }
