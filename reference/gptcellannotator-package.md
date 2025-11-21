@@ -6,9 +6,9 @@ reports, and plotting annotations.
 
 ## Details
 
-The package prefers HTTPS communication via the FastAPI service but can
-fall back to the \`gca\` CLI when offline. Set configuration defaults
-with
+The package is CLI-first and uses the \`gca\` binary by default
+(offline-capable). An optional REST endpoint can be configured when
+available. Set configuration defaults with
 [`gptca_config()`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptca_config.md)
 and see
 [`vignette("annotate-seurat")`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/articles/annotate-seurat.md)
