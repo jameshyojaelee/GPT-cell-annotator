@@ -38,7 +38,7 @@ gca build-db --offline --output-dir ~/.cache/gca/db
 gca scanpy annotate data/demo/pbmc_demo.h5ad --cluster-key leiden --species "Homo sapiens"
 ```
 
-## R / Seurat installation
+## R / Seurat installation (CLI-first)
 
 ```r
 if (!require("pak")) install.packages("pak")

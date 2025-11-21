@@ -1,9 +1,9 @@
 # GPT Cell Annotator
 
-GPT Cell Annotator is a Python-first toolkit for labeling single-cell RNA-seq clusters. It pairs a curated marker knowledge base with prompt-engineered LLM calls, optional retrieval, and validation guardrails. Everything ships in the CLI with offline demo assets; Scanpy helpers and an R wrapper reuse the same engine.
+GPT Cell Annotator is a CLI + Scanpy toolkit with an R wrapper for labeling single-cell RNA-seq clusters. It pairs a curated marker knowledge base with prompt-engineered LLM calls, optional retrieval, and validation guardrails. Everything ships in the CLI with offline demo assets; Scanpy helpers and the R wrapper reuse the same engine. No backend service is required—offline mode is the default.
 
 ## What it does
-- Annotate marker CSVs from the CLI (`gca annotate`) with offline mock or live OpenAI modes.
+- Annotate marker CSVs from the CLI (`gca annotate`) with offline mock mode by default (live OpenAI calls when `OPENAI_API_KEY` is set).
 - Build and ship the marker knowledge base locally (`gca build-db`) with checksum verification.
 - Run end-to-end Scanpy workflows (`gca scanpy annotate`) with caching, presets, and guardrails.
 - Normalise markers across species/orthologs; validate LLM suggestions against curated databases.

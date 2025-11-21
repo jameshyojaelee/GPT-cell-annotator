@@ -1,6 +1,6 @@
 # Seurat Integration Guide
 
-Use the `gptcellannotator` R package to run GPT Cell Annotator from Seurat pipelines. The package shells out to the Python CLI by default so offline runs match the Python behaviour.
+Use the `gptcellannotator` R package to run GPT Cell Annotator from Seurat pipelines. The package shells out to the Python CLI by default so offline runs match the Python behaviour; REST is optional if you already have a hosted service.
 
 ## Prerequisites
 - R ≥ 4.3 with dev headers for `libcurl`, `openssl`, and `xml2`
