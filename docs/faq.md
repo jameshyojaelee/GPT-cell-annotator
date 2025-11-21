@@ -1,83 +1,52 @@
 # Frequently Asked Questions
 
-Looking for a quick answer? Start here and cross-reference the deeper guides linked throughout.
+## Do I need an OpenAI API key?
 
-## Setup & Access
+Only for live LLM annotations. Without `OPENAI_API_KEY`, the engine automatically uses the heuristic mock annotator. You can also force offline mode with `--offline` or `Annotator(force_mock=True)`.
 
-### Do I need an OpenAI API key?
-
-Yes for live LLM annotations. Set `OPENAI_API_KEY` in your environment or `.env`. If the key is missing, expired, or rate-limited, the system automatically falls back to the heuristic mock annotator. You can force mock mode with `gca annotate ... --offline` or `Annotator(force_mock=True)`.
-
-See: [`docs/install.md`](docs/install.md#command-line-interface).
-
-### How do I run completely offline?
-
-Use the bundled assets and mock annotator:
+## How do I run completely offline?
 
 ```bash
 gca build-db --offline
 gca annotate data/demo/pbmc_markers.csv --offline --out-json annotations.json
 ```
 
-The first command copies packaged data into `~/.cache/gpt-cell-annotator`. Override with `GPT_CELL_ANNOTATOR_HOME`. Offline Docker usage is covered in [`docs/install.md`](docs/install.md#docker--compose).
+Assets are cached under `~/.cache/gpt-cell-annotator` by default. Override with `GPT_CELL_ANNOTATOR_HOME` or pass `--output-dir` to `gca build-db`.
 
-### Where does the marker database live?
+## Where is the marker database?
 
-By default, under `~/.cache/gpt-cell-annotator/data/processed/`. Override with:
+The CLI copies `marker_db.parquet` to `~/.cache/gpt-cell-annotator/data/processed/`. Point at a different DB with:
 
-- `GPT_CELL_ANNOTATOR_DATA_DIR=/path/to/dir`
-- `gca build-db --output-dir ./my_db`
-- `annotate_anndata(..., marker_db_path="path/to/marker_db.parquet")`
+- `GCA_MARKER_DB_PATH=/path/to/marker_db.parquet`
+- `gca build-db --output-dir /my/db`
+- `annotate_anndata(..., marker_db_path="...")`
 
-## Annotation Behaviour
+## How do guardrails work?
 
-### Why do some clusters return “Unknown or Novel”?
+Validation checks overlap between suggested markers and the knowledge base. Key knobs:
 
-The validation layer requires a minimum marker overlap (`VALIDATION_MIN_MARKER_OVERLAP`, default `2`). If the overlap is below the threshold or conflicting evidence is detected, the primary label is downgraded to `Unknown or Novel`. The original LLM suggestion is stored as `*_proposed_label` and `annotation.proposed_label`.
+- `VALIDATION_MIN_MARKER_OVERLAP` (default 2) downgrades labels with low support to `Unknown or Novel`.
+- `CONFIDENCE_OVERLAP_MEDIUM` / `CONFIDENCE_OVERLAP_HIGH` raise confidence tiers with more overlap.
+- `RAG_ENABLED`, `RAG_TOP_K`, `RAG_MIN_OVERLAP` gate retrieval augmentation.
 
-See: [`docs/operations.md`](docs/operations.md#validation-guardrails).
+Tune via environment variables before running the CLI or Scanpy helpers.
 
-### How are gene synonyms and species differences handled?
+## What about cross-species datasets?
 
-Markers are normalised using `config/gene_synonyms.json` and the ortholog map in `data/orthologs/`. Provide the source species (`--species` or `dataset_context["species"]`) and the engine maps genes to the primary species (human by default). Update the synonym file or set `SYNONYM_ENABLE_ORTHOLOGS=false` for debugging.
+Provide `--species` (CLI) or `dataset_context["species"]` (Python). Ortholog mapping uses `data/orthologs/human_mouse.tsv`; override with `ORTHOLOG_MAPPING_PATH` or disable via `SYNONYM_ENABLE_ORTHOLOGS=false` for debugging.
 
-See: [`docs/scanpy_integration.md`](docs/scanpy_integration.md#cross-species-workflows).
+## How does the R package work offline?
 
-### Can I tune retrieval-augmented prompting (RAG)?
+`gptcellannotator` shells out to `gca annotate` when `offline = TRUE` (default). Ensure the Python CLI is installed and `Sys.which("gca")` returns a path. Set `offline = FALSE` with `base_url`/`api_key` only when targeting an external REST service.
 
-Yes. Environment variables:
+## CLI says “marker_db.parquet not found”
 
-- `RAG_ENABLED=false` disables database lookups.
-- `RAG_TOP_K=<int>` and `RAG_MIN_OVERLAP=<int>` control candidate density.
+Re-run `gca build-db --offline` or point to an existing DB with `GCA_MARKER_DB_PATH` / `--marker-db`.
 
-Adjust these before running the API, CLI, or notebooks. The changes are picked up by `get_settings()`.
+## Scanpy import errors
 
-## Troubleshooting
+Install the Scanpy extra: `pip install "gpt-cell-annotator[scanpy]"`. Keep `PYTHONPATH` empty so the virtualenv takes precedence.
 
-### “Marker database not found” errors
+## Cached assets look stale
 
-Run `gca build-db` (or `python scripts/build_marker_db.py`). If you’re on a read-only system, copy `gpt_cell_annotator/_assets/data/processed/marker_db.parquet` to a writeable directory and set `GPT_CELL_ANNOTATOR_DATA_DIR`.
-
-### CLI reports “rank_genes_groups missing”
-
-Install the Scanpy extra (`pip install "gpt-cell-annotator[scanpy]"`) and avoid `--skip-recompute-markers` for AnnData files lacking differential-expression results. The helper will compute rankings automatically when Scanpy is available.
-
-### API returns 500 with validation errors
-
-Enable DEBUG logs (`LOG_LEVEL=DEBUG`) and inspect structured output. Common causes:
-
-- Missing ontology IDs in LLM responses → ensure RAG is enabled.
-- Malformed payloads → validate against `schemas/annotation_payload.schema.json`.
-
-### Cached assets get stale
-
-Delete the cache directory (`rm -rf ~/.cache/gpt-cell-annotator`) or pass `--output-dir` to `gca build-db` to regenerate assets in a fresh location. Remember to update `GPT_CELL_ANNOTATOR_HOME` to point to the new cache.
-
-## Resources
-
-- Installation & offline workflows: [`docs/install.md`](docs/install.md)
-- Validation deep dive: [`docs/operations.md`](docs/operations.md)
-- Benchmarks & evaluation: [`docs/benchmarks.md`](docs/benchmarks.md)
-- Demo playbook: [`docs/demo.md`](docs/demo.md)
-
-Still stuck? Open an issue with the failing command, environment details, and relevant logs.
+Delete the cache directory (`rm -rf ~/.cache/gpt-cell-annotator`) or set `GPT_CELL_ANNOTATOR_HOME` to a fresh location before rerunning `gca build-db`.

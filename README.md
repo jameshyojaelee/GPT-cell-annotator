@@ -1,164 +1,83 @@
 # GPT Cell Annotator
 
-GPT Cell Annotator is an AI assistant that annotates single-cell RNA-seq clusters by combining curated marker knowledge with a large language model. It delivers evidence-backed cell type suggestions, confidence scoring, and validation guardrails so teams can move from raw clusters to trusted labels in minutes.
+GPT Cell Annotator is a Python-first toolkit for labeling single-cell RNA-seq clusters. It pairs a curated marker knowledge base with prompt-engineered LLM calls, optional retrieval, and validation guardrails. Everything ships in the CLI with offline demo assets; Scanpy helpers and an R wrapper reuse the same engine.
 
-## Why It Matters
+## What it does
+- Annotate marker CSVs from the CLI (`gca annotate`) with offline mock or live OpenAI modes.
+- Build and ship the marker knowledge base locally (`gca build-db`) with checksum verification.
+- Run end-to-end Scanpy workflows (`gca scanpy annotate`) with caching, presets, and guardrails.
+- Normalise markers across species/orthologs; validate LLM suggestions against curated databases.
+- Bridge to Seurat via the R package (`gptcellannotator`) which shells out to the CLI by default.
 
-- Manual scRNA-seq annotation is slow and inconsistent; experts triage clusters by cross-referencing markers, literature, and ontologies — hours to days per dataset.
-- Existing tools (reference-mapping like SingleR/CellTypist, latent-transfer like scANVI) work best with high-quality reference atlases; they struggle on novel cell states, rare types, or out-of-distribution data.
-- An LLM assistant adds flexible knowledge integration and explanations, but must be guarded against hallucinations via validation and “unknown” handling.
-
-## How it Differs from GPTCelltype
-
-| Aspect | GPT Cell Annotator | [GPTCelltype](https://github.com/Winnie09/GPTCelltype) |
-| --- | --- | --- |
-| Architecture | CLI, FastAPI service, Streamlit UI, and Docker images for end-to-end workflows. | R package aimed at Seurat pipelines inside R sessions. |
-| Knowledge engine | Curated marker database, retrieval augmentation, and offline heuristic annotator for key tasks. | Relies on live GPT model responses directly from user-provided markers. |
-| Validation & guardrails | Automatic evidence checks, downgrade logic, and warning taxonomy (`flagged_low_support`, species mismatch, etc.). | Manual post-hoc review of GPT output; no built-in guardrail system. |
-| Operations | Structured JSON logging, trace IDs, deployment playbooks, and observability roadmap. | No logging or operational guidance beyond API key setup. |
-| Interoperability | Supports Scanpy CLI integration, REST API schema, and notebook tooling. | Focused on Seurat `FindAllMarkers()` output within R. |
-| Offline & resilience | Ships offline demo mode, bundled knowledge assets, and configurable thresholds. | Requires OpenAI API access; no offline fallback or configuration hooks. |
-
-## Quick Start
-
-### 1. Install
+## Quick start
 
 ```bash
-pip install "gpt-cell-annotator[api,scanpy]"
-# Optional extras:
-#   [ui]  -> Streamlit dashboard + plotting stack
-#   [dev] -> Ruff, mypy, pytest, twine helpers
-```
+# Install Python package + Scanpy helpers
+pip install "gpt-cell-annotator[scanpy]"
 
-### 2. Annotate markers from the CLI
-
-```bash
-# Fully offline demo (bundled assets + heuristic mock annotator)
+# Offline demo (uses bundled assets + heuristic mock annotator)
 gca annotate data/demo/pbmc_markers.csv --offline --out-json annotations.json
 
-# Rebuild the marker database locally
+# Rebuild marker DB artifacts locally
 gca build-db --offline --output-dir ~/.cache/gca/db
 
-# Annotate AnnData directly (chunked batches, caching, presets)
+# Annotate AnnData directly
 gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --cluster-key leiden \
   --species "Homo sapiens" \
   --chunk-size 16 \
   --cache-dir ~/.cache/gca/annotations \
-  --json-report reports/pbmc_report.json \
-  --summary-csv reports/pbmc_summary.csv
-
-# Guardrail-only validation for existing labels
-gca scanpy annotate data/demo/pbmc_demo.h5ad \
-  --cluster-key leiden \
-  --label-column celltype_prediction \
-  --species "Homo sapiens" \
-  --validate-only \
-  --json-report reports/pbmc_guardrails.json
+  --json-report reports/pbmc_report.json
 ```
 
-### 3. Serve the API or UI
+Offline mode disables network calls and leans on the heuristic annotator plus bundled assets. Live LLM calls require `OPENAI_API_KEY`.
 
-```bash
-# API (use --offline to disable OpenAI calls)
-OPENAI_API_KEY=sk-... gca api --host 0.0.0.0 --port 8000
+## Scanpy + guardrails in Python
 
-# Streamlit UI (requires [ui] extra)
-streamlit run frontend/streamlit_app.py
+```python
+from gpt_cell_annotator.scanpy import annotate_anndata
+from config.settings import get_settings
+
+settings = get_settings()
+settings.validation_min_marker_overlap = 2
+
+result = annotate_anndata(
+    "data/demo/pbmc_demo.h5ad",
+    cluster_key="leiden",
+    species="Homo sapiens",
+    cache_dir="~/.cache/gca/annotations",
+    settings=settings,
+)
+
+print(result.stats)          # cache hits, batches, guardrail thresholds
+print(result.report_dict())  # structured JSON-ready payload
 ```
 
-Sample API calls (after the API is running on `localhost:8000`):
+## Seurat (R) via the CLI
 
-```bash
-curl -s http://127.0.0.1:8000/health
+```r
+library(gptcellannotator)
 
-curl -s -X POST http://127.0.0.1:8000/annotate_cluster \
-  -H "Content-Type: application/json" \
-  -d '{"cluster": {"cluster_id": "0", "markers": ["MS4A1", "CD79A"]},
-       "dataset_context": {"species": "Homo sapiens", "tissue": "Blood"}}'
+# CLI-first: runs `gca annotate` under the hood
+cfg <- gptca_config(offline = TRUE, cli_path = Sys.which("gca"))
+gptca_config_set(cfg)
+
+markers <- read.csv(system.file("extdata", "pbmc_markers.csv", package = "gptcellannotator"))
+annotations <- gptca_annotate_markers(markers, species = "Homo sapiens")
+annotations$clusters
 ```
 
-### 4. Containers
+Set `offline = FALSE` and provide `base_url`/`api_key` only if you need the optional REST service.
 
-```bash
-# Build the multi-stage image and launch the offline stack
-docker compose up --build
+## Architecture (brief)
+- **LLM layer:** prompt-engineered OpenAI calls with schema validation; mock annotator for offline mode.
+- **Retrieval:** optional top-k marker lookup against local databases to ground model responses.
+- **Validation & guardrails:** overlap thresholds, downgrade to Unknown, and structured warnings per cluster.
+- **Assets:** bundled demo marker tables, ortholog maps, and prompts materialised under `~/.cache/gpt-cell-annotator`.
 
-# One-off annotation using the CLI entrypoint
-docker run --rm -v $PWD/data:/data gpt-cell-annotator annotate data/demo/pbmc_markers.csv --offline
-```
-
-> Offline mode relies on the bundled heuristic annotator and local marker database copies. Live LLM annotations require `OPENAI_API_KEY`.
-
-See `docs/install.md` for detailed installation scenarios.
-
-## Quick Demo
-
-```bash
-gca build-db --offline
-gca annotate data/demo/pbmc_markers.csv --offline --species "Homo sapiens"
-```
-
-Expected console output:
-
-```
-Cluster  Primary Label     Confidence  Status     Warnings
-0        B cell            High        supported  -
-5        Unknown or Novel  Low         flagged    low_marker_overlap
-```
-
-Add `--out-json demo_annotations.json` to store the structured report (same schema as the REST API). Continue with the UI or Scanpy tutorials in [`docs/getting_started.md`](docs/getting_started.md#guided-tutorials).
-
-## Development
-
-Refer to [`docs/development.md`](docs/development.md) for contributor environment setup, pre-commit usage, and test workflows.
-
-## Key Features
-
-[![Seurat Workflow](https://img.shields.io/badge/docs-seurat_integration-orange)](docs/seurat_integration.md)
-[![pkgdown](https://img.shields.io/badge/docs-r_reference-important)](https://jameshyojaelee.github.io/CellAnnot-GPT/r)
-[![Getting Started](https://img.shields.io/badge/docs-getting_started-blue)](docs/getting_started.md)
-[![Install Guide](https://img.shields.io/badge/docs-install-blueviolet)](docs/install.md)
-[![API Reference](https://img.shields.io/badge/docs-api_reference-green)](docs/api_reference.md)
-[![Scanpy Integration](https://img.shields.io/badge/docs-scanpy_integration-teal)](docs/scanpy_integration.md)
-[![Operations](https://img.shields.io/badge/docs-operations-purple)](docs/operations.md)
-[![Benchmarks](https://img.shields.io/badge/docs-benchmarks-red)](docs/benchmarks.md)
-[![FAQ](https://img.shields.io/badge/docs-faq-lightgrey)](docs/faq.md)
-[![Roadmap](https://img.shields.io/badge/docs-roadmap-yellow)](docs/roadmap.md)
-
-**Workflow cheat sheet**
-- Build the marker knowledge base from the sources listed in `config/marker_sources.yaml` with `gca build-db`; outputs land in `data/processed/`.
-- Start the FastAPI backend (`gca api`) so it can load the marker DB and expose `/annotate_cluster` / `/annotate_batch`.
-- Upload cluster markers (e.g., `data/demo/pbmc_markers.csv`) via the Streamlit UI or call the API to receive JSON annotations you can store alongside Scanpy results.
-- Drop into notebooks with `annotate_anndata` (returns a `ScanpyAnnotationResult`) or run `gca scanpy annotate` (with `--validate-only` for guardrail checks) for batch pipelines.
-- Tune guardrails with `VALIDATION_MIN_MARKER_OVERLAP`, `VALIDATION_FORCE_UNKNOWN_ON_FAIL`, `CONFIDENCE_OVERLAP_MEDIUM`, and `CONFIDENCE_OVERLAP_HIGH` to balance conservatism vs. recall.
-- Cross-species? Supply `species` (e.g., `Mus musculus`)—ortholog tables in `data/orthologs/` map markers back to the human-centric knowledge base and surface mapping notes in the UI/API.
-- Set `GCA_MARKER_DB_PATH` to point at external marker databases and `GCA_CACHE_DIR` to persist annotation responses when working offline.
-- Install the `[api]` extra to expose Prometheus counters for batch throughput and latency when running long-lived services.
-
-### Backend async cache behaviour
-
-The async cache helper (`backend/cache/async_cache.py`) always runs synchronous `compute`
-callables inside `asyncio.to_thread` so FastAPI and Streamlit event loops stay
-responsive. Async callables are awaited directly, and the helper still accepts
-awaitable return values from sync functions. When providing a synchronous `compute`
-callback, avoid touching asyncio primitives directly (use regular Python code) because
-execution occurs on a worker thread.
-
-## Seurat Workflow (R)
-
-- Install the R interface with `pak::pkg_install("github::jameshyojaelee/CellAnnot-GPT?subdir=clients/r/gptcellannotator")` or run `Rscript clients/r/scripts/install_github.R`.
-- Explore the pkgdown site for function reference, configuration helpers, and the vignette walkthrough: <https://jameshyojaelee.github.io/CellAnnot-GPT/r>.
-- Run `vignette("annotate-seurat", package = "gptcellannotator")` for an end-to-end example that covers REST usage, offline CLI fallback, and metadata merging utilities.
-- Cross-check Scanpy and Seurat workflows via [`docs/seurat_integration.md`](docs/seurat_integration.md) and [`docs/scanpy_integration.md`](docs/scanpy_integration.md) to keep pipelines in sync.
-
-- Marker knowledge ingestion from PanglaoDB, CellMarker, and curated literature.
-- Prompt-engineered LLM annotation engine with batch support and uncertainty handling.
-- Validation layer cross-checking LLM outputs against marker databases.
-- FastAPI REST endpoints plus a Streamlit UI for interactive exploration, run-to-run comparison, and knowledge-linked warnings.
-- Benchmark toolkit for evaluating accuracy and tracking improvements.
-- Deployment-ready configuration (Docker, CI/CD) and demo assets for presentations.
-
-## Repository Layout
-
-See directory tree in project root for component descriptions. Detailed architecture notes live in `docs/architecture.md`.
+## Documentation
+- Installation and offline setup: `docs/install.md`
+- Guided CLI walkthroughs: `docs/getting_started.md`
+- Scanpy integration details: `docs/scanpy_integration.md`
+- Seurat integration (R): `docs/seurat_integration.md`
+- FAQs and configuration: `docs/faq.md`

@@ -1,36 +1,21 @@
 # Scanpy Integration Guide
 
-Leverage GPT Cell Annotator inside Scanpy notebooks, pipelines, and headless batch jobs. The integration ships with both a rich Python API (`annotate_anndata`) and a CLI (`gca scanpy`) so you can stay in your preferred workflow.
+Use GPT Cell Annotator directly in Scanpy pipelines via the Python API or the `gca scanpy` CLI.
 
-> Prefer Seurat? Head to [`docs/seurat_integration.md`](docs/seurat_integration.md) for the R workflow and pkgdown links.
->
-> Migrating from the previous async/concurrency workflow? See [`docs/migration/scanpy_vNext.md`](docs/migration/scanpy_vNext.md).
+## Setup
 
-## Quickstart Checklist
+```bash
+pip install "gpt-cell-annotator[scanpy]"
+gca build-db --offline  # materialise bundled marker assets
+```
 
-| Step | Command | Notes |
-| --- | --- | --- |
-| 1. Install extras | `pip install "gpt-cell-annotator[scanpy]"` | Adds Scanpy + AnnData dependencies. |
-| 2. Materialise assets | `gca build-db --offline` | Uses bundled demo sources; see [`scripts/build_marker_db.py`](../scripts/build_marker_db.py) for custom runs. |
-| 3. Annotate markers from a CSV | `gca annotate data/demo/pbmc_markers.csv --species "Homo sapiens" --offline` | Produces JSON/CSV reports you can merge back into AnnData. |
-| 4. Port results into AnnData | Follow the code below or the walkthrough in [`docs/demo.md`](docs/demo.md) | Demonstrates notebook + UI steps end-to-end. |
-
-> Need end-to-end setup guidance? Start with `docs/getting_started.md` and the CLI primer in `docs/install.md`.
-
-## Annotate Within a Notebook
+## Annotate in a notebook
 
 ```python
 import scanpy as sc
-from gpt_cell_annotator import (
-    BatchOptions,
-    GuardrailConfig,
-    annotate_anndata,
-)
+from gpt_cell_annotator import BatchOptions, GuardrailConfig, annotate_anndata
 
 adata = sc.read_h5ad("data/demo/pbmc_demo.h5ad")
-
-# Ensure differential expression is computed (auto-run when missing)
-sc.tl.rank_genes_groups(adata, groupby="leiden", n_genes=5, method="wilcoxon")
 
 result = annotate_anndata(
     adata,
@@ -39,43 +24,20 @@ result = annotate_anndata(
     tissue="Peripheral blood",
     top_n_markers=5,
     batch_options=BatchOptions(chunk_size=16),
-    guardrails=GuardrailConfig(min_marker_overlap=1),
+    guardrails=GuardrailConfig(min_marker_overlap=2),
 )
 
+result.adata.obs[["gptca_label", "gptca_status"]].head()
 result.report.summary
-result.adata.obs[["gptca_label", "gptca_confidence", "gptca_status"]].head()
 ```
 
-### What the helper does
+The helper will compute `rank_genes_groups` when missing, normalise markers (including ortholog mapping), call the annotator (mock or live), apply validation guardrails, and return a `ScanpyAnnotationResult` with:
 
-1. Computes `rank_genes_groups` if the AnnData object lacks marker rankings.
-2. Normalises gene symbols and builds the batch payload.
-3. Calls the annotation engine (mock or live depending on `OPENAI_API_KEY`).
-4. Cross-checks results against the marker DB and writes columns such as `gptca_label`, `gptca_status`, `gptca_rationale`, `gptca_canonical_markers`, and `gptca_mapping_notes`.
-5. Returns a `ScanpyAnnotationResult` with `.adata`, `.annotations`, and `.report` (`ScanpyDatasetReport`) summarising guardrails, cache hits, and offline mode.
+- `adata`: updated AnnData object with `gptca_*` columns
+- `annotations`: list of per-cluster annotations
+- `report`: `ScanpyDatasetReport` containing guardrail stats and warnings
 
-### Common Parameters
-
-- `top_n_markers`: choose how many markers per cluster are sent to the LLM (default `5`).
-- `result_prefix`: customise output column prefixes (e.g., `"ca2025_label"`).
-- `marker_db_path` / `marker_db`: point to custom knowledge bases (Parquet DataFrame). Marker DBs are cached under `~/.cache/gpt-cell-annotator` (or `GCA_CACHE_DIR`) for faster reloads.
-- `annotator`: inject your own `Annotator` (e.g., forcing `force_mock=True` for validation runs).
-- `batch_options`: control chunk size per LLM request. Defaults to `BatchOptions(chunk_size=32)`.
-- `guardrails`: override thresholds via `GuardrailConfig` instead of mutating global settings.
-- `annotation_cache`: pass a `DiskAnnotationCache` (or `--cache-dir`/`GCA_CACHE_DIR`) to persist responses between runs.
-- `request_id`: provide a custom identifier that flows into log records.
-- `compute_rankings=False`: skip automatic `scanpy.tl.rank_genes_groups` if you already have rankings.
-
-### Convenience Wrappers
-
-- `annotate_rank_genes(rank_genes_groups, species=...)` – Run the annotator on a `rank_genes_groups['names']` mapping without an AnnData object.
-- `annotate_from_markers({"cluster": ["MS4A1", ...], ...})` – Annotate directly from marker dictionaries when Scanpy is not available.
-- Both wrappers return `MarkerAnnotationResult` (with `.report` and aggregated stats) so you can reuse validation summaries outside AnnData workflows.
-- These helpers now share the same payload pipeline as `annotate_anndata`, which means curated marker lists are forwarded verbatim (no truncation to match the first cluster) while still benefiting from batching, caching, and guardrails.
-
-## Command-Line Workflow
-
-The CLI mirrors the notebook flow and is ideal for automation, Nextflow/Snakemake steps, or CI smoke tests.
+## CLI workflow
 
 ```bash
 gca scanpy annotate data/demo/pbmc_demo.h5ad \
@@ -83,75 +45,36 @@ gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --species "Homo sapiens" \
   --chunk-size 24 \
   --cache-dir ~/.cache/gca/annotations \
-  --preset human_pbmc \
   --json-report reports/pbmc_report.json \
   --offline
 
+# Guardrail-only validation of existing labels
 gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --cluster-key leiden \
   --label-column curated_label \
   --species "Homo sapiens" \
-  --validate-only \
-  --json-report reports/pbmc_guardrails.json
+  --validate-only
 ```
 
 Key flags:
+- `--marker-db` to point at a custom Parquet DB (defaults to cached assets or `GCA_MARKER_DB_PATH`)
+- `--preset` for quick species/tissue presets (`human_pbmc`, `mouse_pbmc`, `mouse_brain`)
+- `--cache-dir` / `GCA_CACHE_DIR` to persist annotation responses between runs
+- `--guardrail-min-overlap`, `--guardrail-force-unknown` to override thresholds without editing env vars
+- `--offline` to force the heuristic annotator (no network calls)
 
-- `--marker-db` – override the Parquet file. Defaults to the cached `~/.cache/gpt-cell-annotator/data/processed/marker_db.parquet` or `GCA_MARKER_DB_PATH`.
-- `--chunk-size` – control how many clusters are sent per LLM request.
-- `--cache-dir` / `--use-cache` – persist annotation responses on disk (`DiskAnnotationCache`). Falls back to `GCA_CACHE_DIR` when unset.
-- `--preset` – apply species/tissue shortcuts such as `human_pbmc` or `mouse_brain`.
-- `--json-report`, `--summary-csv` – materialise structured reports.
-- `--guardrail-min-overlap` & `--guardrail-force-unknown` – override guardrail thresholds without editing `.env`.
-- `--validate-only` – skip LLM calls and rerun guardrails against existing annotation columns.
+## Guardrails and retrieval
 
-For reference implementations see [`docs/demo.md`](docs/demo.md) for the live demo script and [`notebooks/scanpy_benchmark.py`](../notebooks/scanpy_benchmark.py) for a headless benchmark comparing cached vs. uncached runs.
+Environment variables (or `config.settings.Settings`) control validation and retrieval:
 
-## Validation & Guardrails
-
-Results returned by `annotate_anndata` or `gca scanpy` run through the same validation layer described in `docs/operations.md#validation-guardrails`. Expect:
-
-- Automatic downgrade to `Unknown or Novel` when marker overlap falls below `VALIDATION_MIN_MARKER_OVERLAP`.
-- `*_mapping_notes` columns containing ortholog conversions and missed genes.
-- Structured warnings persisted in the JSON report and `*_status` fields (e.g., `flagged_low_support`, `flagged_species_mismatch`).
-
-Tune thresholds via `.env` or command-line environment variables before invoking the CLI:
-
-```bash
-export VALIDATION_MIN_MARKER_OVERLAP=3
-export CONFIDENCE_OVERLAP_HIGH=4
-gca scanpy annotate ...
-```
-
-## Batching, Caching & Telemetry
-
-- `BatchOptions(chunk_size)` keeps large projects responsive while respecting rate limits.
-- `DiskAnnotationCache(path)` (or `--cache-dir`/`GCA_CACHE_DIR`) stores per-cluster results so reruns can skip the LLM entirely.
-- Set `GCA_MARKER_DB_PATH` to point at enterprise marker databases without copying files into the project tree.
-- Every run emits standard logging records (`scanpy.annotate.start/complete`, `scanpy.validate.complete`). Hook into logging configuration to forward them elsewhere.
-- Pass a `request_id` (CLI `--request-id`) to correlate notebooks, CLI runs, and API logs.
-
-## Cross-Species Workflows
-
-- Provide the appropriate `--species` or `dataset_context["species"]` (e.g., `"Mus musculus"`).
-- Ortholog expansion uses files in `data/orthologs/`; customise via `ORTHOLOG_MAPPING_PATH`.
-- Inspect `gptca_canonical_markers` to see the humanised markers used during validation.
-- Disable ortholog handling with `SYNONYM_ENABLE_ORTHOLOGS=false` for debugging or when working with custom gene IDs.
+- `VALIDATION_MIN_MARKER_OVERLAP` (default 2) downgrades labels with low support.
+- `CONFIDENCE_OVERLAP_MEDIUM` / `CONFIDENCE_OVERLAP_HIGH` adjust confidence tiers.
+- `RAG_ENABLED`, `RAG_TOP_K`, `RAG_MIN_OVERLAP` gate retrieval augmentation.
+- `SYNONYM_ENABLE_ORTHOLOGS` toggles ortholog mapping; `ORTHOLOG_MAPPING_PATH` overrides the mapping file.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-| --- | --- |
-| `FileNotFoundError: marker_db.parquet` | Run `gca build-db` or specify `--marker-db`. |
-| `ValueError: rank_genes_groups` missing | Install the Scanpy extra and avoid `--skip-recompute-markers`; `annotate_anndata` can compute rankings automatically when Scanpy is available. |
-| Mock annotations when API key is set | Confirm `OPENAI_API_KEY` is exported in the environment invoking the CLI/notebook. |
-| No markers written to `*_canonical_markers` | Ensure clusters contain at least one ranked gene above `top_n_markers`. |
-
-## Further Reading
-
-- `docs/install.md` – package installation and offline usage.
-- `docs/getting_started.md` – full environment tutorial including Scanpy workflows.
-- `docs/operations.md` – guardrails, validation thresholds, and observability tips.
-- `docs/benchmarks.md` – comparing Scanpy-integrated runs with baseline models.
-
-Happy annotating!
+- Missing `marker_db.parquet` → rerun `gca build-db` or set `--marker-db`.
+- `scanpy` import errors → ensure the scanpy extra is installed in the active environment.
+- Empty markers in offline mode → confirm the CSV `markers` column parses correctly (comma/JSON lists).
+- Unexpected mock mode → set `OPENAI_API_KEY` before launching notebooks/CLI, or pass `force_mock=True` explicitly for offline runs.
