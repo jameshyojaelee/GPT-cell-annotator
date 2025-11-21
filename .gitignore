@@ -15,7 +15,6 @@ dist/
 prompts/
 
 # Poetry / pip
-poetry.lock
 pip-wheel-metadata/
 
 # Data artifacts
