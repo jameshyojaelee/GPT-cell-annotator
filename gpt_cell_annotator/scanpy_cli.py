@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from gpt_cell_annotator.scanpy import main as _scanpy_main
 

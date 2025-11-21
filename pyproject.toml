@@ -68,6 +68,13 @@ module = [
 ]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [
+    "structlog",
+    "structlog.*",
+]
+ignore_missing_imports = true
+
 [tool.poetry.dependencies]
 python = ">=3.9,<3.13"
 openai = "^1.30.0"

@@ -11,7 +11,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Central configuration for GPT Cell Annotator services."""
 
-    model_config = ConfigDict(populate_by_name=True, env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = ConfigDict(
+        populate_by_name=True, env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini")

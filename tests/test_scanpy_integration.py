@@ -4,11 +4,7 @@ from pathlib import Path
 
 import anndata as ad
 import pytest
-import sys
-
-TESTS_DIR = Path(__file__).parent
-if str(TESTS_DIR) not in sys.path:
-    sys.path.insert(0, str(TESTS_DIR))
+from fixtures.scanpy import marker_dataframe, synthetic_adata
 
 from backend.llm.annotator import Annotator
 from config.settings import get_settings
@@ -23,7 +19,6 @@ from gpt_cell_annotator.scanpy import (
     validate_anndata,
 )
 from gpt_cell_annotator.scanpy import main as scanpy_main
-from fixtures.scanpy import marker_dataframe, synthetic_adata
 
 
 @pytest.fixture()
@@ -162,7 +157,9 @@ def test_annotate_from_markers_handles_variable_marker_counts(marker_db):
         annotator=annotator,
     )
 
-    marker_lengths = {cluster["cluster_id"]: len(cluster["markers"]) for cluster in result.annotations}
+    marker_lengths = {
+        cluster["cluster_id"]: len(cluster["markers"]) for cluster in result.annotations
+    }
     assert marker_lengths["0"] == 3
     assert marker_lengths["1"] == 1
 
@@ -223,7 +220,10 @@ def test_validate_anndata_guardrail_override(adata, marker_db):
         marker_db=marker_db,
         guardrails=GuardrailConfig(min_marker_overlap=5),
     )
-    assert report_strict.dataset.summary.flagged_clusters >= report_default.dataset.summary.flagged_clusters
+    assert (
+        report_strict.dataset.summary.flagged_clusters
+        >= report_default.dataset.summary.flagged_clusters
+    )
 
 
 def test_disk_cache_reduces_batches(monkeypatch, adata, marker_db, tmp_path: Path):

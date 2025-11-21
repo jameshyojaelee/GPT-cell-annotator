@@ -6,10 +6,11 @@ import argparse
 import json
 import logging
 import os
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence, cast
+from typing import Any, cast
 
 import anndata as ad
 import numpy as np
@@ -349,7 +350,9 @@ def _apply_annotations_to_obs(
             adata.obs.at[obs_idx, mapping_col] = mapping_display
 
 
-def report_to_dataframe(report: DatasetReport | ScanpyDatasetReport | dict[str, Any]) -> pd.DataFrame:
+def report_to_dataframe(
+    report: DatasetReport | ScanpyDatasetReport | dict[str, Any],
+) -> pd.DataFrame:
     """Return a dataframe summarising cluster annotations."""
 
     dataset: DatasetReport
