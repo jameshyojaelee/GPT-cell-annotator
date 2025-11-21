@@ -12,8 +12,15 @@ GPT-Cell-Annotator is a CLI + Scanpy toolkit with an R wrapper for labeling sing
 ## Quick start
 
 ```bash
-# Install Python package + Scanpy helpers
-pip install "gpt-cell-annotator[scanpy]"
+# Install directly from GitHub (no PyPI needed)
+pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator[scanpy]"
+
+# Or install from a local build artifact
+#   1) poetry build
+#   2) pip install dist/gpt_cell_annotator-*.whl
+
+# For editable dev installs
+pip install -e ".[scanpy,dev]"
 
 # Offline demo (uses bundled assets + heuristic mock annotator)
 gca annotate data/demo/pbmc_markers.csv --offline --out-json annotations.json

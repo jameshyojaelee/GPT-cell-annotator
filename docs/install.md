@@ -5,17 +5,18 @@
 - Optional: Scanpy stack for AnnData workflows (`pip install "gpt-cell-annotator[scanpy]"`)
 - Optional: R 4.3+ with Pandoc (for the Seurat vignette)
 
-## Python installation
+## Python installation (no PyPI required)
 
 ```bash
-# Core CLI + engine
-pip install gpt-cell-annotator
+# Install directly from GitHub with Scanpy extras
+pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator[scanpy]"
 
-# Add Scanpy helpers (recommended for AnnData workflows)
-pip install "gpt-cell-annotator[scanpy]"
+# Or install from a local build artifact
+#   poetry build
+#   pip install dist/gpt_cell_annotator-*.whl
 
-# Developer tooling
-pip install "gpt-cell-annotator[dev]"
+# Editable/development install
+pip install -e ".[scanpy,dev]"
 ```
 
 The first CLI call will materialise bundled assets under `~/.cache/gpt-cell-annotator`. Override with:
