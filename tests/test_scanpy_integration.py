@@ -152,6 +152,43 @@ def test_annotate_from_markers(marker_db):
     assert any(label != "Unknown or Novel" for label in labels)
 
 
+def test_annotate_from_markers_handles_variable_marker_counts(marker_db):
+    markers = {"0": ["MS4A1", "CD79A", "CD74"], "1": ["CD3E"]}
+    annotator = Annotator(force_mock=True)
+    result = annotate_from_markers(
+        markers,
+        species="Homo sapiens",
+        marker_db=marker_db,
+        annotator=annotator,
+    )
+
+    marker_lengths = {cluster["cluster_id"]: len(cluster["markers"]) for cluster in result.annotations}
+    assert marker_lengths["0"] == 3
+    assert marker_lengths["1"] == 1
+
+
+def test_annotate_from_markers_does_not_slice_payload(monkeypatch, marker_db):
+    observed: dict[str, list[str]] = {}
+
+    def fake_annotate(self, payload, context):
+        for entry in payload:
+            observed[str(entry["cluster_id"])] = list(entry["markers"])
+        return {str(item["cluster_id"]): {"primary_label": "B cell"} for item in payload}
+
+    monkeypatch.setattr("backend.llm.annotator.Annotator.annotate_batch", fake_annotate)
+    markers = {"0": ["MS4A1", "CD79A", "CD74"], "1": ["CD3E", "CD3D"]}
+
+    annotate_from_markers(
+        markers,
+        species="Homo sapiens",
+        marker_db=marker_db,
+        batch_options=BatchOptions(chunk_size=2),
+    )
+
+    assert observed["0"] == ["MS4A1", "CD79A", "CD74"]
+    assert observed["1"] == ["CD3E", "CD3D"]
+
+
 def test_annotate_rank_genes_wrapper(marker_db):
     rankings = {
         "0": ["MS4A1", "CD79A", "CD74"],

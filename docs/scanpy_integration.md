@@ -71,6 +71,7 @@ result.adata.obs[["gptca_label", "gptca_confidence", "gptca_status"]].head()
 - `annotate_rank_genes(rank_genes_groups, species=...)` – Run the annotator on a `rank_genes_groups['names']` mapping without an AnnData object.
 - `annotate_from_markers({"cluster": ["MS4A1", ...], ...})` – Annotate directly from marker dictionaries when Scanpy is not available.
 - Both wrappers return `MarkerAnnotationResult` (with `.report` and aggregated stats) so you can reuse validation summaries outside AnnData workflows.
+- These helpers now share the same payload pipeline as `annotate_anndata`, which means curated marker lists are forwarded verbatim (no truncation to match the first cluster) while still benefiting from batching, caching, and guardrails.
 
 ## Command-Line Workflow
 

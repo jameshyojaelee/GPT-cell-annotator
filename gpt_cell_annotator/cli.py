@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
@@ -255,21 +254,6 @@ def cmd_scanpy(args: argparse.Namespace) -> int:
     return scanpy.main(cmd_args)
 
 
-def cmd_api(args: argparse.Namespace) -> int:
-    _prepare_environment(args)
-    command = [
-        "uvicorn",
-        args.app,
-        "--host",
-        args.host,
-        "--port",
-        str(args.port),
-    ]
-    if args.reload:
-        command.append("--reload")
-    return subprocess.call(command)
-
-
 def _build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
@@ -391,35 +375,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Arguments forwarded to `python -m gpt_cell_annotator.scanpy`.",
     )
     scanpy_parser.set_defaults(func=cmd_scanpy)
-
-    api_parser = subparsers.add_parser(
-        "api",
-        parents=[common],
-        help="Run the FastAPI service.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    api_parser.add_argument(
-        "--host",
-        default="0.0.0.0",
-        help="Interface to bind the API server to.",
-    )
-    api_parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port to expose the API server on.",
-    )
-    api_parser.add_argument(
-        "--app",
-        default="backend.api.main:app",
-        help="Import path for the ASGI application.",
-    )
-    api_parser.add_argument(
-        "--reload",
-        action="store_true",
-        help="Enable autoreload (development mode).",
-    )
-    api_parser.set_defaults(func=cmd_api)
 
     return parser
 

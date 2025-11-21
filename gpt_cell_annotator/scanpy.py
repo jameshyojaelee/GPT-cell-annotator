@@ -462,41 +462,21 @@ def _build_annotations(
     return annotations
 
 
-def annotate_anndata(
-    adata: AnnData,
-    cluster_key: str,
+def _annotate_clusters_payload(
+    clusters_payload: Sequence[dict[str, Any]],
     *,
     species: str,
     tissue: str | None = None,
-    top_n_markers: int = 5,
-    result_prefix: str = "gptca",
     marker_db: pd.DataFrame | None = None,
     marker_db_path: str | Path | None = None,
     annotator: Annotator | None = None,
-    compute_rankings: bool = True,
     batch_options: BatchOptions | None = None,
     guardrails: GuardrailConfig | None = None,
     annotation_cache: DiskAnnotationCache | None = None,
     request_id: str | None = None,
     progress_callback: Callable[[int], None] | None = None,
-) -> ScanpyAnnotationResult:
-    """Annotate clusters in an AnnData object using GPT Cell Annotator."""
-
-    if cluster_key not in adata.obs:
-        raise KeyError(f"Cluster key '{cluster_key}' not found in adata.obs.")
-
-    if compute_rankings:
-        _ensure_rankings(
-            adata,
-            cluster_key,
-            top_n_markers=top_n_markers,
-        )
-
-    cluster_markers = _extract_markers(adata, cluster_key, top_n_markers)
-    clusters_payload = [
-        {"cluster_id": cluster_id, "markers": markers}
-        for cluster_id, markers in cluster_markers.items()
-    ]
+) -> tuple[list[dict[str, Any]], ScanpyDatasetReport]:
+    """Shared annotation pipeline for pre-built cluster payloads."""
 
     annotator_instance = annotator or Annotator()
     offline_mode = annotator_instance.llm_mode != "live"
@@ -619,7 +599,6 @@ def annotate_anndata(
         chunk_size=chunk_size,
     )
 
-    _apply_annotations_to_obs(adata, cluster_key, result_prefix, report_model)
     logger.info(
         "scanpy.annotate.complete",
         extra={
@@ -629,11 +608,61 @@ def annotate_anndata(
             "llm_batches": llm_batches,
         },
     )
-    return ScanpyAnnotationResult(
-        adata=adata,
-        annotations=annotations,
-        report=report,
+    return annotations, report
+
+
+def annotate_anndata(
+    adata: AnnData,
+    cluster_key: str,
+    *,
+    species: str,
+    tissue: str | None = None,
+    top_n_markers: int = 5,
+    result_prefix: str = "gptca",
+    marker_db: pd.DataFrame | None = None,
+    marker_db_path: str | Path | None = None,
+    annotator: Annotator | None = None,
+    compute_rankings: bool = True,
+    batch_options: BatchOptions | None = None,
+    guardrails: GuardrailConfig | None = None,
+    annotation_cache: DiskAnnotationCache | None = None,
+    request_id: str | None = None,
+    progress_callback: Callable[[int], None] | None = None,
+) -> ScanpyAnnotationResult:
+    """Annotate clusters in an AnnData object using GPT Cell Annotator."""
+
+    if cluster_key not in adata.obs:
+        raise KeyError(f"Cluster key '{cluster_key}' not found in adata.obs.")
+
+    if compute_rankings:
+        _ensure_rankings(
+            adata,
+            cluster_key,
+            top_n_markers=top_n_markers,
+        )
+
+    cluster_markers = _extract_markers(adata, cluster_key, top_n_markers)
+    clusters_payload = [
+        {"cluster_id": cluster_id, "markers": markers}
+        for cluster_id, markers in cluster_markers.items()
+    ]
+
+    annotations, report = _annotate_clusters_payload(
+        clusters_payload,
+        species=species,
+        tissue=tissue,
+        marker_db=marker_db,
+        marker_db_path=marker_db_path,
+        annotator=annotator,
+        batch_options=batch_options,
+        guardrails=guardrails,
+        annotation_cache=annotation_cache,
+        request_id=request_id,
+        progress_callback=progress_callback,
     )
+
+    _apply_annotations_to_obs(adata, cluster_key, result_prefix, report.dataset)
+    return ScanpyAnnotationResult(adata=adata, annotations=annotations, report=report)
 
 
 def annotate_from_markers(
@@ -653,31 +682,21 @@ def annotate_from_markers(
         {"cluster_id": str(cluster_id), "markers": _unique_ordered(markers)}
         for cluster_id, markers in cluster_markers.items()
     ]
-    dummy_obs = pd.DataFrame(
-        {"cluster": [str(cluster_id) for cluster_id in cluster_markers.keys()]},
-        index=[f"cluster_{idx}" for idx, _ in enumerate(cluster_markers)],
-    )
-    dummy_adata = ad.AnnData(np.zeros((len(dummy_obs), 1)), obs=dummy_obs, var=pd.DataFrame(index=["gene"]))
-    dummy_adata.uns["rank_genes_groups"] = {"names": {str(k): list(v) for k, v in cluster_markers.items()}}
-    result = annotate_anndata(
-        dummy_adata,
-        "cluster",
+    annotations, report = _annotate_clusters_payload(
+        clusters_payload,
         species=species,
         tissue=tissue,
-        top_n_markers=len(next(iter(cluster_markers.values()))) if cluster_markers else 5,
-        result_prefix="gptca",
         marker_db=marker_db,
         marker_db_path=marker_db_path,
         annotator=annotator,
-        compute_rankings=False,
         batch_options=batch_options,
         guardrails=guardrails,
         annotation_cache=annotation_cache,
         request_id=request_id,
     )
     return MarkerAnnotationResult(
-        annotations=result.annotations,
-        report=result.report,
+        annotations=annotations,
+        report=report,
     )
 
 

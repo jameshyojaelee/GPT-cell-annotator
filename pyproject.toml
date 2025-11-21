@@ -29,7 +29,6 @@ packages = [
     { include = "gpt_cell_annotator" },
     { include = "backend" },
     { include = "config" },
-    { include = "frontend" },
 ]
 include = [
     { path = "gpt_cell_annotator/_assets/**/*", format = [ "sdist", "wheel" ] },
@@ -66,8 +65,6 @@ module = [
     "anndata.*",
     "scanpy",
     "scanpy.*",
-    "prometheus_client",
-    "prometheus_client.*",
 ]
 ignore_missing_imports = true
 
@@ -87,52 +84,26 @@ python-dotenv = "^1.0.1"
 pyarrow = "^16.1.0"
 jsonschema = "^4.25.0"
 pyyaml = "^6.0.2"
-fastapi = { version = "^0.116.0", optional = true }
-streamlit = { version = "^1.36.0", optional = true }
-redis = { version = "^5.0.4", optional = true }
-altair = { version = "^5.3.0", optional = true }
-fpdf2 = { version = "^2.7.0", optional = true }
 scanpy = { version = ">=1.9,<1.12", optional = true }
 matplotlib = { version = "^3.9.0", optional = true }
 seaborn = { version = "^0.13.2", optional = true }
-uvicorn = { version = "^0.30.1", extras = [ "standard" ], optional = true }
 loompy = { version = "^3.0.7", optional = true }
-prometheus-client = { version = "^0.20.0", optional = true }
 pytest = { version = "^8.2.1", optional = true }
 black = { version = "^24.4.2", optional = true }
 mypy = { version = "^1.10.0", optional = true }
 ruff = { version = "^0.4.4", optional = true }
 poethepoet = { version = "^0.27.0", optional = true }
 pytest-asyncio = { version = "^0.23.7", optional = true }
-fakeredis = { version = "^2.23.2", optional = true }
 pandas-stubs = { version = "^2.2.2.240807", optional = true }
 types-pyyaml = { version = "^6.0.12.20240808", optional = true }
 types-jsonschema = { version = "^4.23.0.20241019", optional = true }
 pkginfo = { version = "^1.10.0", optional = true }
 twine = { version = "^6.1.0", optional = true }
 pre-commit = { version = "^3.7.1", optional = true }
-structlog = { version = "^24.1.0", optional = true }
 
 [tool.poetry.extras]
 scanpy = [ "scanpy", "loompy" ]
-ui = [ "streamlit", "altair", "fpdf2", "matplotlib", "seaborn" ]
-dev = [ "pytest", "pytest-asyncio", "black", "ruff", "mypy", "fakeredis", "pandas-stubs", "types-pyyaml", "types-jsonschema", "poethepoet", "twine", "pkginfo", "pre-commit", "structlog", "prometheus-client" ]
-api = [ "fastapi", "uvicorn", "redis" ]
-observability = [ "structlog", "prometheus-client" ]
-full = [
-    "fastapi",
-    "uvicorn",
-    "redis",
-    "streamlit",
-    "altair",
-    "fpdf2",
-    "matplotlib",
-    "seaborn",
-    "scanpy",
-    "loompy",
-    "structlog",
-    "prometheus-client",
-]
+dev = [ "pytest", "pytest-asyncio", "black", "ruff", "mypy", "pandas-stubs", "types-pyyaml", "types-jsonschema", "poethepoet", "twine", "pkginfo", "pre-commit" ]
 
 [tool.ruff.lint]
 select = [ "E", "F", "B", "I", "UP", "N", "RUF",]
@@ -152,13 +123,13 @@ install = "poetry install"
 lock = "poetry lock"
 
 [tool.poe.tasks.format]
-cmd = "black backend frontend evaluation scripts config tests"
+cmd = "black backend scripts config tests gpt_cell_annotator"
 
 [tool.poe.tasks.ruff]
-cmd = "ruff check backend frontend evaluation scripts config tests"
+cmd = "ruff check backend scripts config tests gpt_cell_annotator"
 
 [tool.poe.tasks.ruff-fix]
-cmd = "ruff check --fix backend frontend evaluation scripts config tests"
+cmd = "ruff check --fix backend scripts config tests gpt_cell_annotator"
 
 [tool.poe.tasks.typecheck]
 cmd = "mypy backend"
@@ -169,14 +140,5 @@ cmd = "pytest"
 [tool.poe.tasks.lint]
 sequence = [ "ruff", "typecheck",]
 
-[tool.poe.tasks.benchmarks]
-cmd = "python scripts/run_benchmarks.py --mock"
-
 [tool.poe.tasks.build-marker-db]
 cmd = "python scripts/build_marker_db.py"
-
-[tool.poe.tasks.api]
-cmd = "uvicorn backend.api.main:app --reload"
-
-[tool.poe.tasks.ui]
-cmd = "streamlit run frontend/streamlit_app.py"

@@ -1,16 +1,16 @@
-.PHONY: install format lint test typecheck ruff ruff-fix build-marker-db api ui clean pre-commit packaging-check
+.PHONY: install format lint test typecheck ruff ruff-fix build-marker-db clean pre-commit packaging-check
 
 install:
-	poetry install --extras "dev" --extras "scanpy" --extras "api" --extras "ui"
+	poetry install --extras "dev" --extras "scanpy"
 
 format:
-	poetry run black backend frontend evaluation scripts config tests
+	poetry run black backend scripts config tests gpt_cell_annotator
 
 ruff:
-	poetry run ruff check backend frontend evaluation scripts config tests
+	poetry run ruff check backend scripts config tests gpt_cell_annotator
 
 ruff-fix:
-	poetry run ruff check --fix backend frontend evaluation scripts config tests
+	poetry run ruff check --fix backend scripts config tests gpt_cell_annotator
 
 lint: ruff typecheck
 
@@ -32,12 +32,6 @@ packaging-check:
 
 build-marker-db:
 	poetry run python scripts/build_marker_db.py
-
-api:
-	poetry run uvicorn backend.api.main:app --reload
-
-ui:
-	poetry run streamlit run frontend/streamlit_app.py
 
 clean:
 	rm -rf __pycache__ .pytest_cache .ruff_cache .mypy_cache

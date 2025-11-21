@@ -21,7 +21,6 @@ class Settings(BaseSettings):
 
     environment: str = Field(default="development")
     data_dir: str = Field(default="data/processed")
-    redis_url: str = Field(default="", alias="REDIS_URL")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     validation_min_marker_overlap: int = Field(default=2, ge=0)
     validation_force_unknown_on_fail: bool = Field(default=True)
