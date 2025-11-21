@@ -79,14 +79,10 @@ rich = "^13.7.1"
 pydantic = "^2.7.1"
 pydantic-settings = "^2.3.4"
 httpx = "^0.27.0"
-sqlalchemy = "^2.0.30"
-python-dotenv = "^1.0.1"
 pyarrow = "^16.1.0"
 jsonschema = "^4.25.0"
 pyyaml = "^6.0.2"
 scanpy = { version = ">=1.9,<1.12", optional = true }
-matplotlib = { version = "^3.9.0", optional = true }
-seaborn = { version = "^0.13.2", optional = true }
 loompy = { version = "^3.0.7", optional = true }
 pytest = { version = "^8.2.1", optional = true }
 black = { version = "^24.4.2", optional = true }
