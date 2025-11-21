@@ -32,6 +32,25 @@ gca scanpy annotate data/demo/pbmc_demo.h5ad \
 
 Offline mode disables network calls and leans on the heuristic annotator plus bundled assets. Live LLM calls require `OPENAI_API_KEY`.
 
+### Bundled demos
+- Marker CSV: `data/demo/pbmc_markers.csv` (used in `gca annotate` examples).
+- AnnData: `data/demo/pbmc_demo.h5ad` with Leiden clustering precomputed for `gca scanpy annotate`.
+  - To regenerate: install `python-igraph` and `leidenalg`, then run:
+    ```bash
+    python - <<'PY'
+    import scanpy as sc
+    from pathlib import Path
+    adata = sc.datasets.pbmc3k()
+    sc.pp.recipe_zheng17(adata)
+    sc.tl.pca(adata)
+    sc.pp.neighbors(adata)
+    sc.tl.leiden(adata, key_added="leiden")
+    out = Path("data/demo/pbmc_demo.h5ad")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    adata.write(out, compression="gzip")
+    PY
+    ```
+
 ## Scanpy + guardrails in Python
 
 ```python

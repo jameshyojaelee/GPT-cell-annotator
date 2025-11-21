@@ -38,6 +38,8 @@ gca scanpy annotate data/demo/pbmc_demo.h5ad \
 
 Use `--validate-only` to run guardrails on existing labels without calling the LLM, and `--offline` to force the heuristic annotator.
 
+The repo bundles `data/demo/pbmc_demo.h5ad` with Leiden clustering precomputed. To rebuild it yourself, install `python-igraph` and `leidenalg` and run the snippet in the README under “Bundled demos.”
+
 ## 4) Programmatic usage (Python)
 
 ```python

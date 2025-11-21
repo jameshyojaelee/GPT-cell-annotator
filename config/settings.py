@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Central configuration for GPT Cell Annotator services."""
+
+    model_config = ConfigDict(populate_by_name=True, env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini")
@@ -34,12 +36,6 @@ class Settings(BaseSettings):
     synonym_enable_orthologs: bool = Field(default=True)
     ortholog_mapping_path: str = Field(default="data/orthologs/human_mouse.tsv")
     kb_primary_species: str = Field(default="Homo sapiens")
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        populate_by_name = True
-        extra = "ignore"
 
 
 @lru_cache(maxsize=1)

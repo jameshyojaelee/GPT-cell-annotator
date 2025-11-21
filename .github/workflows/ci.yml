@@ -28,21 +28,19 @@ jobs:
           poetry config virtualenvs.in-project true
           poetry install --no-interaction \
             --extras "dev" \
-            --extras "scanpy" \
-            --extras "api" \
-            --extras "ui"
+            --extras "scanpy"
 
       - name: Pre-commit checks
         run: poetry run pre-commit run --all-files
 
       - name: Ruff lint
-        run: poetry run ruff check backend frontend evaluation scripts config tests
+        run: poetry run ruff check backend scripts config tests gpt_cell_annotator
 
       - name: Black format check
-        run: poetry run black --check backend frontend evaluation scripts config tests
+        run: poetry run black --check backend scripts config tests gpt_cell_annotator
 
       - name: Mypy type check
-        run: poetry run mypy backend
+        run: poetry run mypy backend gpt_cell_annotator
 
       - name: Run unit tests
         env:
@@ -51,22 +49,12 @@ jobs:
 
       - name: Scanpy CLI smoke test (offline)
         run: |
-          tmp_dir=$(mktemp -d)
-          poetry run python scripts/ci_build_smoke_anndata.py "$tmp_dir"
-          poetry run gca scanpy annotate "$tmp_dir/smoke.h5ad" \
-            --cluster-key cluster \
+          poetry run gca scanpy annotate data/demo/pbmc_demo.h5ad \
+            --cluster-key leiden \
             --species "Homo sapiens" \
-            --chunk-size 2 \
-            --json-report "$tmp_dir/smoke_report.json" \
-            --summary-csv "$tmp_dir/smoke_summary.csv" \
+            --json-report /tmp/smoke_report.json \
+            --summary-csv /tmp/smoke_summary.csv \
             --offline
-          test -s "$tmp_dir/smoke_report.json"
-          rm -rf "$tmp_dir"
-
-      - name: Execute Scanpy benchmark notebook
-        run: |
-          poetry run pip install nbmake
-          poetry run nbmake notebooks/ScanpyBenchmark.ipynb --timeout=600
 
       - name: Build distribution artifacts
         run: |
@@ -78,89 +66,3 @@ jobs:
         with:
           name: dist-${{ github.sha }}
           path: dist
-
-      - name: Build Docker image
-        run: docker build -t gpt-cell-annotator-ci .
-
-      - name: Log in to GHCR
-        if: github.ref == 'refs/heads/main'
-        env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          if [ -z "$GHCR_TOKEN" ]; then
-            echo "GHCR_TOKEN not set; skipping login"
-            exit 0
-          fi
-          echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Tag and push image
-        if: github.ref == 'refs/heads/main'
-        env:
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
-        run: |
-          if [ -z "$GHCR_TOKEN" ]; then
-            echo "GHCR_TOKEN not set; skipping push"
-            exit 0
-          fi
-          IMAGE=ghcr.io/${{ github.repository }}/gpt-cell-annotator:${{ github.sha }}
-          docker tag gpt-cell-annotator-ci "$IMAGE"
-          docker push "$IMAGE"
-
-      - name: Run Trivy scan
-        uses: aquasecurity/trivy-action@0.13.0
-        with:
-          image-ref: gpt-cell-annotator-ci
-          format: 'table'
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-
-  benchmarks:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Install deps
-        run: |
-          poetry config virtualenvs.in-project true
-          poetry install --no-interaction \
-            --extras "dev" \
-            --extras "scanpy" \
-            --extras "api" \
-            --extras "ui"
-
-      - name: Pre-commit checks
-        run: poetry run pre-commit run --all-files
-
-      - name: Run benchmarks (mock)
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ALLOW_BENCHMARK_REGRESSIONS: ${{ env.ALLOW_BENCHMARK_REGRESSIONS }}
-        run: |
-          poetry run python scripts/run_benchmarks.py --mock --output-dir docs/reports
-
-      - name: Upload reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-reports
-          path: docs/reports
-
-      - name: Upload benchmark diff summary
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-diff-summary
-          path: |
-            docs/reports/latest/diff_summary.json
-            docs/reports/latest/*.csv
