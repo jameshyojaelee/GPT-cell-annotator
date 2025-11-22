@@ -65,6 +65,7 @@ module = [
     "anndata.*",
     "scanpy",
     "scanpy.*",
+    "tqdm",
 ]
 ignore_missing_imports = true
 

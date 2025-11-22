@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover - handled via guards in runtime paths.
 try:  # Progress bars are optional; fallback to logging when missing.
     from tqdm import tqdm
 except ImportError:  # pragma: no cover - tqdm is an optional extra.
-    tqdm = None  # type: ignore[assignment]
+    tqdm = None
 
 logger = logging.getLogger("gpt_cell_annotator.scanpy")
 

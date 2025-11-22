@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import ConfigDict, Field
-from pydantic_settings import BaseSettings
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Central configuration for GPT Cell Annotator services."""
 
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         populate_by_name=True, env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 

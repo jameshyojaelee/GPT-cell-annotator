@@ -382,7 +382,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(list(argv) if argv is not None else None)
-    return args.func(args)
+    return int(args.func(args))
 
 
 if __name__ == "__main__":  # pragma: no cover
