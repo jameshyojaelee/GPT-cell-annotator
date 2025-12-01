@@ -33,6 +33,9 @@ packages = [
 include = [
     { path = "src/gpt_cell_annotator/_assets/**/*", format = [ "sdist", "wheel" ] },
     { path = "src/gpt_cell_annotator/schemas/**/*.json", format = [ "sdist", "wheel" ] },
+    { path = "src/config/**/*.json", format = [ "sdist", "wheel" ] },
+    { path = "src/config/**/*.yaml", format = [ "sdist", "wheel" ] },
+    { path = "src/config/orthologs/**/*.tsv", format = [ "sdist", "wheel" ] },
 ]
 
 [tool.poetry.scripts]
