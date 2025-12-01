@@ -4,18 +4,18 @@ install:
 	poetry install --extras "dev" --extras "scanpy"
 
 format:
-	poetry run black backend scripts config tests gpt_cell_annotator
+	poetry run black src scripts tests
 
 ruff:
-	poetry run ruff check backend scripts config tests gpt_cell_annotator
+	poetry run ruff check src scripts tests
 
 ruff-fix:
-	poetry run ruff check --fix backend scripts config tests gpt_cell_annotator
+	poetry run ruff check --fix src scripts tests
 
 lint: ruff typecheck
 
 typecheck:
-	poetry run mypy backend
+	poetry run mypy src/backend src/gpt_cell_annotator src/config
 
 pre-commit:
 	poetry run pre-commit run --all-files
@@ -34,5 +34,6 @@ build-marker-db:
 	poetry run python scripts/build_marker_db.py
 
 clean:
-	rm -rf __pycache__ .pytest_cache .ruff_cache .mypy_cache
+	find src tests -name "__pycache__" -type d -prune -exec rm -rf {} +
+	rm -rf __pycache__ .pytest_cache .ruff_cache .mypy_cache dist gptcellannotator.Rcheck
 	rm -f marker_db.sqlite

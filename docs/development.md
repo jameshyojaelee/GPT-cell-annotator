@@ -9,13 +9,13 @@ poetry install --extras "scanpy" --extras "dev"
 # pip install -e ".[scanpy,dev]"
 ```
 
-Ensure `PYTHONPATH` is empty so tests import the project from the virtualenv.
+Ensure `PYTHONPATH` includes `src` when running without an editable install; the pytest config already adds it during test runs.
 
 ## Common tasks
 
-- Format: `poetry run black backend scripts config tests gpt_cell_annotator`
-- Lint: `poetry run ruff check backend scripts config tests gpt_cell_annotator`
-- Type check: `poetry run mypy backend gpt_cell_annotator`
+- Format: `poetry run black src scripts tests`
+- Lint: `poetry run ruff check src scripts tests`
+- Type check: `poetry run mypy src/backend src/gpt_cell_annotator src/config`
 - Tests: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 poetry run pytest`
 
 The `make` targets wrap these commands (`make format`, `make ruff`, `make test`).

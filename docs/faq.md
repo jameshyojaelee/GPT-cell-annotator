@@ -33,7 +33,7 @@ Tune via environment variables before running the CLI or Scanpy helpers.
 
 ## What about cross-species datasets?
 
-Provide `--species` (CLI) or `dataset_context["species"]` (Python). Ortholog mapping uses `data/orthologs/human_mouse.tsv`; override with `ORTHOLOG_MAPPING_PATH` or disable via `SYNONYM_ENABLE_ORTHOLOGS=false` for debugging.
+Provide `--species` (CLI) or `dataset_context["species"]` (Python). Ortholog mapping uses the packaged file at `config/orthologs/human_mouse.tsv`; override with `ORTHOLOG_MAPPING_PATH` or disable via `SYNONYM_ENABLE_ORTHOLOGS=false` for debugging.
 
 ## How does the R package work offline?
 

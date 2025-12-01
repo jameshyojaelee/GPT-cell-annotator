@@ -9,5 +9,5 @@ if [[ ! -x "${VENV_BIN}" ]]; then
   exit 1
 fi
 
-export PYTHONPATH=""
+export PYTHONPATH="src"
 exec "${VENV_BIN}" -m pytest "$@"

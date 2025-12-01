@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-from backend.data_ingest.marker_loader import (
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if SRC_DIR.exists():
+    sys.path.insert(0, str(SRC_DIR))
+
+from backend.data_ingest.marker_loader import (  # noqa: E402
     ChecksumMismatchError,
     MarkerDataLoader,
     SourceResolutionError,
     default_sources,
-    load_sources_from_yaml,
 )
+from config.settings import DEFAULT_MARKER_SOURCES  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("config/marker_sources.yaml"),
+        default=None,
         help="YAML file listing marker data sources.",
     )
     parser.add_argument(
@@ -55,10 +61,8 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.config:
-        sources = load_sources_from_yaml(args.config)
-    else:
-        sources = default_sources()
+    config_path = Path(args.config) if args.config else DEFAULT_MARKER_SOURCES
+    sources = default_sources(config_path)
 
     loader = MarkerDataLoader(
         sources,

@@ -26,13 +26,13 @@ classifiers = [
 ]
 package-mode = true
 packages = [
-    { include = "gpt_cell_annotator" },
-    { include = "backend" },
-    { include = "config" },
+    { include = "gpt_cell_annotator", from = "src" },
+    { include = "backend", from = "src" },
+    { include = "config", from = "src" },
 ]
 include = [
-    { path = "gpt_cell_annotator/_assets/**/*", format = [ "sdist", "wheel" ] },
-    { path = "schemas/**/*.json", format = [ "sdist", "wheel" ] },
+    { path = "src/gpt_cell_annotator/_assets/**/*", format = [ "sdist", "wheel" ] },
+    { path = "src/gpt_cell_annotator/schemas/**/*.json", format = [ "sdist", "wheel" ] },
 ]
 
 [tool.poetry.scripts]
@@ -54,7 +54,7 @@ warn_return_any = true
 warn_unused_ignores = true
 strict_optional = true
 implicit_reexport = false
-mypy_path = "$PROJECT_ROOT"
+mypy_path = "$PROJECT_ROOT/src"
 [[tool.mypy.overrides]]
 module = [ "pandas", "pandas.*", "yaml", "yaml.*", "jsonschema", "jsonschema.*",]
 ignore_missing_imports = true
@@ -117,7 +117,7 @@ ignore = [ "B008",]
 minversion = "7.0"
 addopts = "-ra --strict-markers -p pytest_asyncio"
 testpaths = [ "tests",]
-pythonpath = [ ".",]
+pythonpath = [ "src",]
 markers = [
     "asyncio: marks tests that exercise asyncio codepaths",
 ]
@@ -127,16 +127,16 @@ install = "poetry install"
 lock = "poetry lock"
 
 [tool.poe.tasks.format]
-cmd = "black backend scripts config tests gpt_cell_annotator"
+cmd = "black src scripts tests"
 
 [tool.poe.tasks.ruff]
-cmd = "ruff check backend scripts config tests gpt_cell_annotator"
+cmd = "ruff check src scripts tests"
 
 [tool.poe.tasks.ruff-fix]
-cmd = "ruff check --fix backend scripts config tests gpt_cell_annotator"
+cmd = "ruff check --fix src scripts tests"
 
 [tool.poe.tasks.typecheck]
-cmd = "mypy backend"
+cmd = "mypy src/backend src/gpt_cell_annotator src/config"
 
 [tool.poe.tasks.test]
 cmd = "pytest"

@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from collections.abc import Iterable, Sequence
-from pathlib import Path
+from importlib import resources
 from typing import Any, cast
 
 from jsonschema import Draft202012Validator
@@ -27,6 +27,8 @@ from backend.util.gene_normalization import get_gene_normalizer
 from config.settings import Settings, get_settings
 
 logger = logging.getLogger("gpt_cell_annotator.llm")
+SCHEMA_PACKAGE = "gpt_cell_annotator.schemas"
+SCHEMA_FILENAME = "annotation_result.schema.json"
 
 
 class AnnotationError(RuntimeError):
@@ -228,17 +230,22 @@ class Annotator:
     # Public API -----------------------------------------------------------------
 
     def _load_schemas(self) -> None:
-        schema_path = (
-            Path(__file__).resolve().parents[2] / "schemas" / "annotation_result.schema.json"
-        )
+        schema_path = f"{SCHEMA_PACKAGE}/{SCHEMA_FILENAME}"
         try:
-            with schema_path.open("r", encoding="utf-8") as fh:
-                dataset_schema = json.load(fh)
-        except FileNotFoundError:
+            schema_text = (
+                resources.files(SCHEMA_PACKAGE)
+                .joinpath(SCHEMA_FILENAME)
+                .read_text(encoding="utf-8")
+            )
+            dataset_schema = json.loads(schema_text)
+        except (FileNotFoundError, OSError):
             logger.error(
                 "Annotation schema not found at %s; using permissive validator.",
                 schema_path,
             )
+            dataset_schema = {}
+        except json.JSONDecodeError as exc:
+            logger.error("Annotation schema at %s is invalid JSON: %s", schema_path, exc)
             dataset_schema = {}
 
         annotation_schema = (

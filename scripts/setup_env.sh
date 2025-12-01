@@ -22,5 +22,5 @@ Activate it with:
   source .venv/bin/activate
 
 Run commands with a clean interpreter path (recommended on HPC modules):
-  PYTHONPATH= .venv/bin/python -m pytest
+  PYTHONPATH=src .venv/bin/python -m pytest
 EOF

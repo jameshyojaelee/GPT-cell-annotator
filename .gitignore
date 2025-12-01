@@ -12,6 +12,7 @@ dist/
 *.egg-info/
 .mypy_cache/
 .ruff_cache/
+gptcellannotator.Rcheck/
 prompts/
 
 # Poetry / pip

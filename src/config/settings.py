@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+CONFIG_DIR = Path(__file__).resolve().parent
+DEFAULT_SYNONYM_CONFIG = CONFIG_DIR / "gene_synonyms.json"
+DEFAULT_MARKER_SOURCES = CONFIG_DIR / "marker_sources.yaml"
+DEFAULT_ORTHOLOG_MAPPING = CONFIG_DIR / "orthologs" / "human_mouse.tsv"
 
 
 class Settings(BaseSettings):
@@ -34,9 +41,9 @@ class Settings(BaseSettings):
     rag_top_k: int = Field(default=5, ge=1)
     rag_min_overlap: int = Field(default=1, ge=0)
     rag_cache_size: int = Field(default=256, ge=0)
-    synonym_config_path: str = Field(default="config/gene_synonyms.json")
+    synonym_config_path: str = Field(default=str(DEFAULT_SYNONYM_CONFIG))
     synonym_enable_orthologs: bool = Field(default=True)
-    ortholog_mapping_path: str = Field(default="data/orthologs/human_mouse.tsv")
+    ortholog_mapping_path: str = Field(default=str(DEFAULT_ORTHOLOG_MAPPING))
     kb_primary_species: str = Field(default="Homo sapiens")
 
 
@@ -47,4 +54,11 @@ def get_settings() -> Settings:
     return Settings()
 
 
-__all__ = ["Settings", "get_settings"]
+__all__ = [
+    "CONFIG_DIR",
+    "DEFAULT_MARKER_SOURCES",
+    "DEFAULT_ORTHOLOG_MAPPING",
+    "DEFAULT_SYNONYM_CONFIG",
+    "Settings",
+    "get_settings",
+]
