@@ -74,6 +74,10 @@ Offline mode disables network calls and leans on the heuristic annotator plus bu
     PY
     ```
 
+Bundled assets live under `src/gpt_cell_annotator/_assets` and are materialised to
+`~/.cache/gpt-cell-annotator` automatically when you run the CLI. The top-level `data/`
+directory is reserved for locally generated artifacts (e.g., rebuilt marker databases).
+
 ## Scanpy + guardrails in Python
 
 ```python

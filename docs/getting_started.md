@@ -25,6 +25,9 @@ gca annotate data/demo/pbmc_markers.csv \
 ```
 
 The JSON report matches the schema used by the Scanpy helpers and the R wrapper. Add `--out-csv` to emit a flat summary.
+Bundled assets are packaged with the library and materialised to `~/.cache/gpt-cell-annotator`
+on first use, so the `data/demo/...` paths resolve even if the top-level `data/` directory is
+empty. Use `data/` as scratch space for locally generated artifacts.
 
 ## 3) Scanpy workflow
 

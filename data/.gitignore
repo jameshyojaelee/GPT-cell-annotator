@@ -1,2 +1,5 @@
-processed/*
-!processed/.gitkeep
+# Scratch space for generated artifacts and local datasets. Everything here is ignored
+# by default; packaged demo assets live under src/gpt_cell_annotator/_assets.
+*
+!.gitignore
+!README.md

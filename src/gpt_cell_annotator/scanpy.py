@@ -86,6 +86,14 @@ def _default_request_id(user_supplied: str | None) -> str:
     return f"scanpy-{os.getpid()}"
 
 
+def _asset_home() -> Path | None:
+    for env_var in (assets.HOME_ENV_VAR, "GPT_CELL_ANNOTATOR_ASSETS_HOME"):
+        configured = os.environ.get(env_var)
+        if configured:
+            return Path(configured).expanduser()
+    return None
+
+
 @dataclass(slots=True)
 class DiskAnnotationCache:
     """Disk-backed cache for Scanpy annotations (synchronous)."""
@@ -832,14 +840,20 @@ def validate_anndata(
 
 
 def _read_adata(path: Path) -> AnnData:
-    suffix = path.suffix.lower()
+    candidate = path.expanduser()
+    try:
+        candidate = assets.resolve_path(candidate, home=_asset_home())
+    except FileNotFoundError:
+        pass
+
+    suffix = candidate.suffix.lower()
     if suffix == ".h5ad":
-        return ad.read_h5ad(path)
+        return ad.read_h5ad(candidate)
     if suffix == ".loom":
         if sc is None:
             raise ImportError("scanpy is required to read Loom files.")
-        return sc.read_loom(path, obsm_keys=None)
-    raise ValueError(f"Unsupported AnnData format: {path.suffix}")
+        return sc.read_loom(candidate, obsm_keys=None)
+    raise ValueError(f"Unsupported AnnData format: {candidate.suffix}")
 
 
 def _write_report(report: ScanpyDatasetReport, path: Path) -> None:
