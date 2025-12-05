@@ -1,34 +1,50 @@
 # GPT-Cell-Annotator
 
-GPT-Cell-Annotator is a CLI + Scanpy-compatible tool with an R wrapper for labeling single-cell RNA-seq clusters. It pairs a curated marker knowledge base with prompt-engineered LLM calls, optional retrieval, and validation guardrails. Everything ships in the CLI with offline demo assets; Scanpy helpers and the R wrapper reuse the same engine. No backend service is required—offline mode is the default.
+GPT-Cell-Annotator is a CLI and Scanpy toolkit (with an R wrapper) for labeling single-cell RNA-seq clusters. It pairs a curated marker knowledge base with prompt-engineered LLM calls, optional retrieval, and validation guardrails. Everything ships with offline demo assets and works without a backend; live LLM calls are opt-in.
 
 ## What it does
-- Annotate marker CSVs from the CLI (`gca annotate`) with offline mock mode by default (live OpenAI calls when `OPENAI_API_KEY` is set).
+- Annotate marker CSVs from the CLI (`gca annotate`); offline mock mode is default, live OpenAI calls run when `OPENAI_API_KEY` is set.
 - Build and ship the marker knowledge base locally (`gca build-db`) with checksum verification.
-- Run end-to-end Scanpy workflows (`gca scanpy annotate`) with caching, presets, and guardrails.
+- Run Scanpy workflows end-to-end (`gca scanpy annotate`) with caching, presets, and guardrails.
 - Normalise markers across species/orthologs; validate LLM suggestions against curated databases.
-- Bridge to Seurat via the R package (`gptcellannotator`) which shells out to the CLI by default.
+- Bridge to Seurat via the R package (`gptcellannotator`) which shells out to the CLI.
 
 ## Quick start
 
+1) Install (GitHub; no PyPI needed):
+
 ```bash
-# Install directly from GitHub (no PyPI needed)
 pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator[scanpy]"
+```
 
-# Or install from a local build artifact
-#   1) poetry build
-#   2) pip install dist/gpt_cell_annotator-*.whl
+Or install from a local build artifact:
 
-# For editable dev installs
+```bash
+# 1) poetry build
+# 2) pip install dist/gpt_cell_annotator-*.whl
+```
+
+For editable dev installs:
+
+```bash
 pip install -e ".[scanpy,dev]"
+```
 
-# Offline demo (uses bundled assets + heuristic mock annotator)
+2) Try the offline demo (uses bundled assets + heuristic mock annotator):
+
+```bash
 gca annotate data/demo/pbmc_markers.csv --offline --out-json annotations.json
+```
 
-# Rebuild marker DB artifacts locally
+3) Rebuild marker DB artifacts locally (optional):
+
+```bash
 gca build-db --offline --output-dir ~/.cache/gca/db
+```
 
-# Annotate AnnData directly
+4) Annotate AnnData directly:
+
+```bash
 gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --cluster-key leiden \
   --species "Homo sapiens" \
@@ -37,7 +53,7 @@ gca scanpy annotate data/demo/pbmc_demo.h5ad \
   --json-report reports/pbmc_report.json
 ```
 
-Offline mode disables network calls and leans on the heuristic annotator plus bundled assets. Live LLM calls require `OPENAI_API_KEY`.
+Offline mode disables network calls and leans on the heuristic annotator plus bundled assets. Set `OPENAI_API_KEY` to enable live LLM calls.
 
 ### Bundled demos
 - Marker CSV: `data/demo/pbmc_markers.csv` (used in `gca annotate` examples).

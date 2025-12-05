@@ -26,8 +26,12 @@ FLAG_REASON_MESSAGES: dict[str, str] = {
 CONFIDENCE_ORDER = {"Low": 0, "Medium": 1, "High": 2}
 
 
-def _calibrate_confidence(original: str | None, support_count: int) -> str:
-    settings = get_settings()
+def _calibrate_confidence(
+    original: str | None,
+    support_count: int,
+    settings: Settings | None = None,
+) -> str:
+    settings = settings or get_settings()
     medium_threshold = max(0, settings.confidence_overlap_medium)
     high_threshold = max(medium_threshold, settings.confidence_overlap_high)
 
@@ -116,6 +120,7 @@ def build_structured_report(
         calibrated_confidence = _calibrate_confidence(
             annotation_data.get("confidence"),
             support_count,
+            settings,
         )
 
         status = "supported"

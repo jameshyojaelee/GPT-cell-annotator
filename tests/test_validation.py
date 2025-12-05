@@ -197,3 +197,34 @@ def test_crosscheck_requires_ontology_id() -> None:
 
     assert result.is_supported is False
     assert "missing_ontology_id" in result.flag_reasons
+
+
+def test_report_respects_override_confidence_thresholds() -> None:
+    settings = get_settings()
+    settings.validation_min_marker_overlap = 1
+    base_annotation = {
+        "cluster_id": "5",
+        "primary_label": "B cell",
+        "confidence": "High",
+        "rationale": "Markers align",
+        "markers": ["MS4A1"],
+    }
+    crosscheck = CrosscheckResult(
+        cluster_id="5",
+        primary_label="B cell",
+        ontology_id="CL:0000236",
+        is_supported=True,
+        supporting_markers=["MS4A1"],
+        support_count=2,
+    )
+    override = settings.model_copy(
+        update={"confidence_overlap_medium": 5, "confidence_overlap_high": 6}
+    )
+
+    report = build_structured_report(
+        [base_annotation],
+        {"5": crosscheck},
+        settings_override=override,
+    )
+
+    assert report.clusters[0].confidence == "Low"

@@ -40,6 +40,8 @@ def _prepare_environment(args: argparse.Namespace) -> tuple[Path, Path]:
     """Materialise offline assets and normalise environment variables."""
 
     home_dir = assets.get_asset_home(args.assets_home)
+    os.environ.setdefault(assets.HOME_ENV_VAR, str(home_dir))
+    os.environ.setdefault("GPT_CELL_ANNOTATOR_ASSETS_HOME", str(home_dir))
     assets.ensure_all_assets(home=home_dir)
 
     data_dir = Path(args.data_dir) if args.data_dir else home_dir / "data/processed"

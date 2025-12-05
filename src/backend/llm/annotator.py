@@ -479,6 +479,8 @@ class Annotator:
         payload["_mapping_notes"] = mapping_notes
         payload["_mapping_applied"] = mapping_applied
         payload["_target_species"] = target_species
+        # Use canonical markers for prompts so the LLM sees mapped symbols
+        payload["markers"] = payload["canonical_markers"]
 
         markers_for_retrieval = payload["canonical_markers"] or original_markers
 

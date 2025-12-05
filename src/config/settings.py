@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,7 +31,11 @@ class Settings(BaseSettings):
     openai_retry_backoff_seconds: float = Field(default=1.5)
 
     environment: str = Field(default="development")
-    data_dir: str = Field(default="data/processed")
+    data_dir: str = Field(
+        default="data/processed",
+        alias="GPT_CELL_ANNOTATOR_DATA_DIR",
+        validation_alias=AliasChoices("GPT_CELL_ANNOTATOR_DATA_DIR", "DATA_DIR"),
+    )
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     validation_min_marker_overlap: int = Field(default=2, ge=0)
     validation_force_unknown_on_fail: bool = Field(default=True)

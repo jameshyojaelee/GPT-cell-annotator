@@ -39,6 +39,38 @@ class SleepRecorder:
 def build_choice(content: str) -> Any:
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
+def test_live_prompts_use_canonical_markers(monkeypatch: pytest.MonkeyPatch) -> None:
+    response = {
+        "0": {
+            "primary_label": "B cell",
+            "ontology_id": "CL:0000236",
+            "confidence": "High",
+            "rationale": "Markers support B cell",
+            "markers": ["MS4A1"],
+            "alternatives": [],
+            "caveats": None,
+            "evidence_sources": ["PanglaoDB"],
+        }
+    }
+    completions = FakeCompletions([build_choice(json.dumps(response))])
+    client = FakeClient(completions)
+    settings = Settings(
+        openai_api_key="test-key",
+        openai_requests_per_minute=0,
+        openai_retry_attempts=1,
+    )
+    annotator = Annotator(settings=settings, client=client)  # type: ignore[arg-type]
+
+    annotator.annotate_batch(
+        [{"cluster_id": "0", "markers": ["cd20"]}],
+        {"species": "Homo sapiens"},
+    )
+
+    messages = completions.calls[0]["messages"]
+    user_content = next(msg["content"] for msg in messages if msg["role"] == "user")
+    assert "MS4A1" in user_content
+    assert "CD20" not in user_content
+
 
 def test_annotate_cluster_parses_json(monkeypatch: pytest.MonkeyPatch) -> None:
     expected = {
