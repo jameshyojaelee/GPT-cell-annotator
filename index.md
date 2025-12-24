@@ -45,7 +45,7 @@ while caching dependencies.
 Offline annotations require the Python CLI:
 
 ``` bash
-pip install gpt-cell-annotator
+pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator"
 ```
 
 ## Quick start

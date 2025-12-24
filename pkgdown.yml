@@ -3,7 +3,7 @@ pkgdown: 2.2.0
 pkgdown_sha: ~
 articles:
   annotate-seurat: annotate-seurat.html
-last_built: 2025-12-24T15:36Z
+last_built: 2025-12-24T15:39Z
 urls:
   reference: https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference
   article: https://jameshyojaelee.github.io/CellAnnot-GPT/r/articles
