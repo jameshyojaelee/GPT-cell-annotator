@@ -11,7 +11,7 @@ gptca_cli_annotate <- function(clusters, dataset_context, config, offline = TRUE
     cli::cli_abort(
       c(
         "CLI fallback requested but {.code gca} binary not found.",
-        "i" = "Install the Python package with `pip install gpt-cell-annotator` and ensure `gca` is on PATH."
+        "i" = "Install the Python package with `pip install \"git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator\"` and ensure `gca` is on PATH."
       )
     )
   }

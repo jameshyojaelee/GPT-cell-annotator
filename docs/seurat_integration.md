@@ -6,7 +6,7 @@ Use the `gptcellannotator` R package to run GPT Cell Annotator from Seurat pipel
 - R >= 4.3 with dev headers for `xml2`
 - Pandoc >= 2.11 (bundled with RStudio)
 - Seurat >= 5.0
-- Python CLI installed and on `PATH` (`pip install gpt-cell-annotator`)
+- Python CLI installed and on `PATH` (`pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator"`)
 
 ## Install the R package
 

@@ -38,7 +38,7 @@ The script `clients/r/scripts/install_local_tarball.R` automates those steps wit
 Offline annotations require the Python CLI:
 
 ```bash
-pip install gpt-cell-annotator
+pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator"
 ```
 
 ## Quick start

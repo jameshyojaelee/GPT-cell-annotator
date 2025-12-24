@@ -38,7 +38,7 @@ if (!require("pak")) install.packages("pak")
 pak::pkg_install("github::jameshyojaelee/CellAnnot-GPT@main?subdir=clients/r/gptcellannotator")
 
 # Ensure the Python CLI is available for offline mode
-pip install gpt-cell-annotator
+pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator"
 ```
 
 The R package shells out to `gca annotate` by default. Set `offline = FALSE` and supply `OPENAI_API_KEY` only when using live LLM calls.

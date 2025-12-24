@@ -17,7 +17,7 @@ if (!nzchar(cli_path)) {
   cli_path <- Sys.which("gca")
 }
 if (!nzchar(cli_path)) {
-  stop("Offline QA requires the gca CLI. Install it with `pip install gpt-cell-annotator` and set GPTCA_CLI_PATH.", call. = FALSE)
+  stop("Offline QA requires the gca CLI. Install it with `pip install \"git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator\"` and set GPTCA_CLI_PATH.", call. = FALSE)
 }
 
 cfg <- gptca_config(
