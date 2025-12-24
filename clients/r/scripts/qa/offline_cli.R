@@ -22,8 +22,7 @@ if (!nzchar(cli_path)) {
 
 cfg <- gptca_config(
   offline = TRUE,
-  cli_path = cli_path,
-  base_url = "http://localhost" # unused but required for validation
+  cli_path = cli_path
 )
 gptca_config_set(cfg)
 

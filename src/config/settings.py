@@ -11,7 +11,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 CONFIG_DIR = Path(__file__).resolve().parent
 DEFAULT_SYNONYM_CONFIG = CONFIG_DIR / "gene_synonyms.json"
-DEFAULT_MARKER_SOURCES = CONFIG_DIR / "marker_sources.yaml"
 DEFAULT_ORTHOLOG_MAPPING = CONFIG_DIR / "orthologs" / "human_mouse.tsv"
 
 
@@ -41,10 +40,6 @@ class Settings(BaseSettings):
     validation_force_unknown_on_fail: bool = Field(default=True)
     confidence_overlap_medium: int = Field(default=2, ge=0)
     confidence_overlap_high: int = Field(default=3, ge=0)
-    rag_enabled: bool = Field(default=True)
-    rag_top_k: int = Field(default=5, ge=1)
-    rag_min_overlap: int = Field(default=1, ge=0)
-    rag_cache_size: int = Field(default=256, ge=0)
     synonym_config_path: str = Field(default=str(DEFAULT_SYNONYM_CONFIG))
     synonym_enable_orthologs: bool = Field(default=True)
     ortholog_mapping_path: str = Field(default=str(DEFAULT_ORTHOLOG_MAPPING))
@@ -60,7 +55,6 @@ def get_settings() -> Settings:
 
 __all__ = [
     "CONFIG_DIR",
-    "DEFAULT_MARKER_SOURCES",
     "DEFAULT_ORTHOLOG_MAPPING",
     "DEFAULT_SYNONYM_CONFIG",
     "Settings",

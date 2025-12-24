@@ -24,7 +24,6 @@ gptca_annotate_seurat <- function(
   score_column = NULL,
   top_n = 25,
   offline = NULL,
-  fallback = TRUE,
   config = gptca_config_get()
 ) {
   gptca_require_seurat()
@@ -41,7 +40,6 @@ gptca_annotate_seurat <- function(
     return_validated = return_validated,
     marker_limit = marker_limit,
     offline = offline,
-    fallback = fallback,
     config = config,
     cluster_column = cluster_column,
     gene_column = gene_column,

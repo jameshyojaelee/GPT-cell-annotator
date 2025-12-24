@@ -196,7 +196,7 @@ def test_batch_schema_validation_fallback() -> None:
 
 
 def test_prepare_cluster_payload_maps_cross_species() -> None:
-    settings = Settings(openai_api_key="", openai_requests_per_minute=0, rag_enabled=False)
+    settings = Settings(openai_api_key="", openai_requests_per_minute=0)
     annotator = Annotator(settings=settings)
     enriched = annotator._prepare_cluster_payload(  # type: ignore[attr-defined]
         {"cluster_id": "0", "markers": ["Ms4a1", "Cd79a"]},

@@ -4,11 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- Placeholder for future changes. Add new entries below this heading.
+- Removed Scanpy/AnnData integration, REST stubs, and retrieval/RAG to keep the CLI minimal.
+- Simplified the Python and R wrappers to align with CLI-only workflows.
+- Trimmed assets and dependencies to match marker-list annotation only.
 
 ## [0.2.0] - 2025-11-04
 
-- Scanpy CLI and API upgrades unlock asynchronous batching, offline telemetry, and richer summary reports—see the [Scanpy integration guide](docs/scanpy_integration.md) for walkthroughs and automation tips.
-- Persistent caching, structured telemetry, and guardrail tuning make offline annotation repeatable across CLI, API, and UI workflows.
-- Released the R/Seurat companion (`clients/r/gptcellannotator`) with pkgdown docs and cross-tooling recipes; follow the [Seurat integration playbook](docs/seurat_integration.md) for adoption paths.
-- Documentation refresh spans installation extras, orchestrated demos, and troubleshooting matrices—start with the [Install guide](docs/install.md) for platform-specific instructions.
+- Added validation guardrails and structured reports across CLI and wrappers.
+- Released the R/Seurat companion (`clients/r/gptcellannotator`) with pkgdown docs and cross-tooling recipes.
+- Documentation refresh spans installation, demos, and troubleshooting guidance.

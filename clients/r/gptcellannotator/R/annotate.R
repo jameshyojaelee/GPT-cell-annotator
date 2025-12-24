@@ -6,11 +6,10 @@
 #' @param species Optional species hint passed to the backend.
 #' @param tissue Optional tissue hint passed to the backend.
 #' @param return_validated When `TRUE` (default) returns the validated report
-#'   produced by `/annotate_batch` or `return_validated = TRUE` on the cluster
-#'   endpoint. Set to `FALSE` to access the raw LLM output for a single cluster.
+#'   produced by the CLI. Set to `FALSE` to skip validation in downstream
+#'   helpers; the CLI still returns the validated payload.
 #' @param marker_limit Maximum number of markers per cluster sent to the API.
-#' @param offline Force the CLI fallback instead of HTTP calls.
-#' @param fallback Attempt CLI fallback automatically if HTTP requests fail.
+#' @param offline Force offline mode (CLI uses the mock annotator).
 #' @param config An explicit [gptca_config()] object.
 #' @param cluster_column Column containing cluster identifiers when `markers`
 #'   is a data frame.
@@ -32,7 +31,6 @@ gptca_annotate_markers <- function(
   return_validated = TRUE,
   marker_limit = 50,
   offline = NULL,
-  fallback = TRUE,
   config = gptca_config_get(),
   cluster_column = NULL,
   gene_column = NULL,
@@ -47,12 +45,7 @@ gptca_annotate_markers <- function(
   if (is.null(offline)) {
     offline <- config$offline
   }
-  use_cli <- isTRUE(offline)
-  if (!use_cli && is.null(config$base_url)) {
-    cli::cli_warn("No API base URL configured; using CLI path instead.")
-    use_cli <- TRUE
-  }
-  if (use_cli && !gptca_cli_available(config)) {
+  if (!gptca_cli_available(config)) {
     cli::cli_abort(
       c(
         "CLI mode requested but {.code gca} was not found.",
@@ -77,59 +70,18 @@ gptca_annotate_markers <- function(
 
   dataset_context <- gptca_dataset_context(species = species, tissue = tissue)
 
-  if (!return_validated && length(clusters) > 1) {
-    cli::cli_abort("`return_validated = FALSE` is only supported for a single cluster.")
-  }
-
-  if (!use_cli) {
-    result <- try(
-      gptca_request_backend(clusters, dataset_context, config, return_validated),
-      silent = TRUE
-    )
-    if (!inherits(result, "try-error")) {
-      return(result)
-    }
-    if (isTRUE(fallback) && gptca_cli_available(config)) {
-      cli::cli_warn(
-        c(
-          "HTTP request failed, attempting CLI fallback.",
-          "i" = conditionMessage(attr(result, "condition"))
-        )
-      )
-    } else {
-      stop(conditionMessage(attr(result, "condition")), call. = FALSE)
-    }
+  if (!isTRUE(return_validated)) {
+    cli::cli_warn("CLI always returns the validated report; raw mode is not supported.")
   }
 
   cli_result <- gptca_cli_annotate(
     clusters = clusters,
     dataset_context = dataset_context,
     config = config,
-    offline = TRUE,
+    offline = isTRUE(offline),
     marker_limit = marker_limit
   )
   gptca_parse_result(cli_result, validated = TRUE)
-}
-
-gptca_request_backend <- function(clusters, dataset_context, config, return_validated) {
-  if (length(clusters) == 1L) {
-    body <- list(
-      cluster = clusters[[1]],
-      dataset_context = dataset_context,
-      return_validated = isTRUE(return_validated)
-    )
-    response <- gptca_http_post("/annotate_cluster", body = body, config = config)
-    payload <- response$result %||% response
-    gptca_parse_result(payload, validated = isTRUE(return_validated))
-  } else {
-    body <- list(
-      clusters = clusters,
-      dataset_context = dataset_context
-    )
-    response <- gptca_http_post("/annotate_batch", body = body, config = config)
-    payload <- response$result %||% response
-    gptca_parse_result(payload, validated = TRUE)
-  }
 }
 
 gptca_dataset_context <- function(species = NULL, tissue = NULL) {

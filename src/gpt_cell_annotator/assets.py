@@ -14,26 +14,13 @@ HOME_ENV_VAR = "GPT_CELL_ANNOTATOR_HOME"
 DEFAULT_HOME_DIRNAME = ".cache/gpt-cell-annotator"
 
 BUNDLED_FILES: tuple[str, ...] = (
-    "config/marker_sources.yaml",
-    "data/demo/cellmarker_demo.csv",
-    "data/demo/curated_demo.json",
-    "data/demo/panglaodb_demo.csv",
     "data/demo/pbmc_markers.csv",
     "data/processed/marker_db.parquet",
-    "data/processed/marker_db.sqlite",
 )
 
-MARKER_DB_FILES: tuple[str, ...] = (
-    "data/processed/marker_db.parquet",
-    "data/processed/marker_db.sqlite",
-)
+MARKER_DB_FILES: tuple[str, ...] = ("data/processed/marker_db.parquet",)
 
-DEMO_FILES: tuple[str, ...] = (
-    "data/demo/panglaodb_demo.csv",
-    "data/demo/cellmarker_demo.csv",
-    "data/demo/curated_demo.json",
-    "data/demo/pbmc_markers.csv",
-)
+DEMO_FILES: tuple[str, ...] = ("data/demo/pbmc_markers.csv",)
 
 
 class AssetNotFoundError(FileNotFoundError):

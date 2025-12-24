@@ -1,12 +1,11 @@
 # GPT-Cell-Annotator
 
-GPT-Cell-Annotator is a CLI and Scanpy toolkit (with an R wrapper) for labeling single-cell RNA-seq clusters. It pairs a curated marker knowledge base with prompt-engineered LLM calls, optional retrieval, and validation guardrails. Everything ships with offline demo assets and works without a backend; live LLM calls are opt-in.
+GPT-Cell-Annotator is a minimal CLI toolkit (with Python + R wrappers) for labeling single-cell RNA-seq clusters from marker gene lists. It pairs a curated marker knowledge base with prompt-engineered LLM calls and lightweight validation guardrails. Everything ships with offline demo assets and works without a backend; live LLM calls are opt-in.
 
 ## What it does
 - Annotate marker CSVs from the CLI (`gca annotate`); offline mock mode is default, live OpenAI calls run when `OPENAI_API_KEY` is set.
-- Build and ship the marker knowledge base locally (`gca build-db`) with checksum verification.
-- Run Scanpy workflows end-to-end (`gca scanpy annotate`) with caching, presets, and guardrails.
-- Normalise markers across species/orthologs; validate LLM suggestions against curated databases.
+- Validate labels against the bundled marker DB and downgrade uncertain clusters to `Unknown or Novel`.
+- Provide a small Python API (`annotate_markers`) for in-notebook workflows.
 - Bridge to Seurat via the R package (`gptcellannotator`) which shells out to the CLI.
 
 ## Quick start
@@ -14,7 +13,7 @@ GPT-Cell-Annotator is a CLI and Scanpy toolkit (with an R wrapper) for labeling 
 1) Install (GitHub; no PyPI needed):
 
 ```bash
-pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator[scanpy]"
+pip install "git+https://github.com/jameshyojaelee/CellAnnot-GPT.git#egg=gpt-cell-annotator"
 ```
 
 Or install from a local build artifact:
@@ -27,7 +26,7 @@ Or install from a local build artifact:
 For editable dev installs:
 
 ```bash
-pip install -e ".[scanpy,dev]"
+pip install -e ".[dev]"
 ```
 
 2) Try the offline demo (uses bundled assets + heuristic mock annotator):
@@ -36,67 +35,18 @@ pip install -e ".[scanpy,dev]"
 gca annotate data/demo/pbmc_markers.csv --offline --out-json annotations.json
 ```
 
-3) Rebuild marker DB artifacts locally (optional):
-
-```bash
-gca build-db --offline --output-dir ~/.cache/gca/db
-```
-
-4) Annotate AnnData directly:
-
-```bash
-gca scanpy annotate data/demo/pbmc_demo.h5ad \
-  --cluster-key leiden \
-  --species "Homo sapiens" \
-  --chunk-size 16 \
-  --cache-dir ~/.cache/gca/annotations \
-  --json-report reports/pbmc_report.json
-```
-
-Offline mode disables network calls and leans on the heuristic annotator plus bundled assets. Set `OPENAI_API_KEY` to enable live LLM calls.
-
-### Bundled demos
-- Marker CSV: `data/demo/pbmc_markers.csv` (used in `gca annotate` examples).
-- AnnData: `data/demo/pbmc_demo.h5ad` with Leiden clustering precomputed for `gca scanpy annotate`.
-  - To regenerate: install `python-igraph` and `leidenalg`, then run:
-    ```bash
-    python - <<'PY'
-    import scanpy as sc
-    from pathlib import Path
-    adata = sc.datasets.pbmc3k()
-    sc.pp.recipe_zheng17(adata)
-    sc.tl.pca(adata)
-    sc.pp.neighbors(adata)
-    sc.tl.leiden(adata, key_added="leiden")
-    out = Path("data/demo/pbmc_demo.h5ad")
-    out.parent.mkdir(parents=True, exist_ok=True)
-    adata.write(out, compression="gzip")
-    PY
-    ```
-
-Bundled assets live under `src/gpt_cell_annotator/_assets` and are materialised to
-`~/.cache/gpt-cell-annotator` automatically when you run the CLI. The top-level `data/`
-directory is reserved for locally generated artifacts (e.g., rebuilt marker databases).
-
-## Scanpy + guardrails in Python
+3) Annotate from Python:
 
 ```python
-from gpt_cell_annotator.scanpy import annotate_anndata
-from config.settings import get_settings
+from gpt_cell_annotator import annotate_markers
 
-settings = get_settings()
-settings.validation_min_marker_overlap = 2
+clusters = {
+    "0": ["MS4A1", "CD79A"],
+    "1": ["CD3D", "CD3E"],
+}
 
-result = annotate_anndata(
-    "data/demo/pbmc_demo.h5ad",
-    cluster_key="leiden",
-    species="Homo sapiens",
-    cache_dir="~/.cache/gca/annotations",
-    settings=settings,
-)
-
-print(result.stats)          # cache hits, batches, guardrail thresholds
-print(result.report_dict())  # structured JSON-ready payload
+result = annotate_markers(clusters, species="Homo sapiens")
+print(result.report_dict())
 ```
 
 ## Seurat (R) via the CLI
@@ -113,17 +63,23 @@ annotations <- gptca_annotate_markers(markers, species = "Homo sapiens")
 annotations$clusters
 ```
 
-Set `offline = FALSE` and provide `base_url`/`api_key` only if you need the optional REST service.
+Set `offline = FALSE` and provide `OPENAI_API_KEY` only if you need live LLM calls.
+
+## Bundled demos
+- Marker CSV: `data/demo/pbmc_markers.csv` (used in `gca annotate` examples).
+
+Bundled assets live under `src/gpt_cell_annotator/_assets` and are materialised to
+`~/.cache/gpt-cell-annotator` automatically when you run the CLI. The top-level `data/`
+directory is reserved for locally generated artifacts.
 
 ## Architecture (brief)
 - **LLM layer:** prompt-engineered OpenAI calls with schema validation; mock annotator for offline mode.
-- **Retrieval:** optional top-k marker lookup against local databases to ground model responses.
 - **Validation & guardrails:** overlap thresholds, downgrade to Unknown, and structured warnings per cluster.
-- **Assets:** bundled demo marker tables, ortholog maps, and prompts materialised under `~/.cache/gpt-cell-annotator`.
+- **Assets:** bundled demo marker tables and a small marker DB materialised under `~/.cache/gpt-cell-annotator`.
 
 ## Documentation
 - Installation and offline setup: `docs/install.md`
 - Guided CLI walkthroughs: `docs/getting_started.md`
-- Scanpy integration details: `docs/scanpy_integration.md`
 - Seurat integration (R): `docs/seurat_integration.md`
 - FAQs and configuration: `docs/faq.md`
+- Development notes: `docs/development.md`

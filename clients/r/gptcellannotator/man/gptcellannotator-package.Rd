@@ -1,14 +1,9 @@
 % Generated manually until roxygen can be run
-\name{gptcellannotator-package}
-\alias{gptcellannotator}
-\alias{gptcellannotator-package}
 \docType{package}
-\title{gptcellannotator: Connect Seurat workflows to GPT Cell Annotator}
+\name{gptcellannotator-package}
+\alias{gptcellannotator-package}
+\title{gptcellannotator: R bindings for GPT Cell Annotator}
 \description{
-An R interface to the GPT Cell Annotator backend. Provides helpers for sending marker tables, working with Seurat objects, parsing validation reports, and plotting annotations.
+The package is CLI-first and uses the `gca` binary by default (offline-capable). Set configuration defaults with \code{gptca_config()} and see \code{vignette("annotate-seurat")} for a complete workflow.
 }
-\details{
-The package is CLI-first and uses the `gca` binary by default (offline-capable). An optional REST endpoint can be configured when available. Set configuration defaults with \code{gptca_config()} and see \code{vignette("annotate-seurat")} for a complete workflow.
-}
-\author{GPT Cell Annotator Team <support@gpt-cell-annotator.org>}
-\seealso{\code{gptca_config()}, \code{gptca_annotate_markers()}, \code{gptca_plot_umap()}}
+\author{GPT Cell Annotator Team}

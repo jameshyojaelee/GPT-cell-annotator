@@ -4,20 +4,14 @@
 \alias{gptca_config_set}
 \alias{gptca_config_get}
 \alias{gptca_config_reset}
-\title{Configure GPT Cell Annotator backend access}
+\title{Configure GPT Cell Annotator CLI access}
 \description{
-Create or manage configuration objects used to communicate with the GPT Cell Annotator backend. The configuration stores base URLs (for optional REST calls), authentication, CLI paths, and retry policies.
+Create or manage configuration objects used to communicate with the GPT Cell Annotator CLI. The configuration stores the CLI path and offline flag.
 }
 \usage{
 gptca_config(
-  base_url = Sys.getenv("GPTCA_BASE_URL", unset = NA_character_),
-  api_key = Sys.getenv("GPTCA_API_KEY", unset = NA_character_),
   cli_path = Sys.getenv("GPTCA_CLI_PATH", unset = ""),
-  timeout = 120,
-  retry_max = 3,
-  retry_backoff = 1,
-  offline = TRUE,
-  user_agent = utils::packageName()
+  offline = TRUE
 )
 
 gptca_config_set(config)
@@ -27,21 +21,9 @@ gptca_config_get(default = gptca_config())
 gptca_config_reset()
 }
 \arguments{
-\item{base_url}{Optional base URL for the REST backend. Set to \code{NA} to skip HTTP calls.}
-
-\item{api_key}{Optional API key passed as a Bearer token.}
-
 \item{cli_path}{Path to the \code{gca} CLI (used by default); detected automatically when not supplied.}
 
-\item{timeout}{Request timeout in seconds.}
-
-\item{retry_max}{Maximum retry attempts for transient HTTP failures.}
-
-\item{retry_backoff}{Initial delay in seconds applied to exponential backoff.}
-
 \item{offline}{Logical flag forcing CLI mode (default \code{TRUE}).}
-
-\item{user_agent}{Additional user-agent suffix appended to requests.}
 
 \item{config}{A \verb{GptcaConfig} object to activate.}
 

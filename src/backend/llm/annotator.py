@@ -22,7 +22,6 @@ except ImportError:  # pragma: no cover - fallback when structlog not available
 from openai import OpenAI
 
 from backend.llm import prompts
-from backend.llm.retrieval import retrieve_candidates
 from backend.util.gene_normalization import get_gene_normalizer
 from config.settings import Settings, get_settings
 
@@ -482,25 +481,6 @@ class Annotator:
         # Use canonical markers for prompts so the LLM sees mapped symbols
         payload["markers"] = payload["canonical_markers"]
 
-        markers_for_retrieval = payload["canonical_markers"] or original_markers
-
-        if self.settings.rag_enabled:
-            candidates = retrieve_candidates(
-                markers_for_retrieval,
-                species=target_species,
-                tissue=tissue,
-            )
-            if candidates:
-                payload["retrieved_candidates"] = [
-                    {
-                        "cell_type": candidate.cell_type,
-                        "ontology_id": candidate.ontology_id,
-                        "overlap": candidate.overlap,
-                        "supporting_markers": candidate.supporting_markers,
-                        "tissue_counts": candidate.tissue_counts,
-                    }
-                    for candidate in candidates
-                ]
         return payload
 
     def _log_request(

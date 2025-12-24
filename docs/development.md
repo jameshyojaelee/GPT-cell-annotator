@@ -3,10 +3,10 @@
 ## Environment
 
 ```bash
-poetry install --extras "scanpy" --extras "dev"
+poetry install --extras "dev"
 # or via venv:
 # python -m venv .venv && source .venv/bin/activate
-# pip install -e ".[scanpy,dev]"
+# pip install -e ".[dev]"
 ```
 
 Ensure `PYTHONPATH` includes `src` when running without an editable install; the pytest config already adds it during test runs.
@@ -24,7 +24,6 @@ The `make` targets wrap these commands (`make format`, `make ruff`, `make test`)
 
 ```bash
 gca annotate data/demo/pbmc_markers.csv --offline --out-json /tmp/demo.json
-gca build-db --offline --output-dir /tmp/gca-db
 ```
 
-These commands exercise the bundled assets and mock annotator without network access.
+This command exercises the bundled assets and mock annotator without network access.

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 from collections.abc import Sequence
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -15,16 +14,12 @@ import pandas as pd
 from rich.console import Console
 from rich.table import Table
 
-from backend.data_ingest.marker_loader import (
-    MarkerDataLoader,
-    load_sources_from_yaml,
-)
 from backend.llm.annotator import Annotator
 from backend.validation.crosscheck import crosscheck_batch
 from backend.validation.report import build_structured_report
 from config.settings import get_settings
 from gpt_cell_annotator import assets
-from gpt_cell_annotator.scanpy import report_to_dataframe
+from gpt_cell_annotator.annotate import report_to_dataframe
 
 console = Console()
 
@@ -42,7 +37,6 @@ def _prepare_environment(args: argparse.Namespace) -> tuple[Path, Path]:
     home_dir = assets.get_asset_home(args.assets_home)
     os.environ.setdefault(assets.HOME_ENV_VAR, str(home_dir))
     os.environ.setdefault("GPT_CELL_ANNOTATOR_ASSETS_HOME", str(home_dir))
-    assets.ensure_all_assets(home=home_dir)
 
     data_dir = Path(args.data_dir) if args.data_dir else home_dir / "data/processed"
     assets.ensure_marker_database(home=home_dir, target_dir=data_dir)
@@ -200,60 +194,6 @@ def cmd_annotate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _rewrite_local_paths(sources: list, home_dir: Path) -> None:
-    assets.ensure_demo_files(home=home_dir)
-    for cfg in sources:
-        if getattr(cfg, "local_path", None) and not cfg.local_path.exists():
-            try:
-                resolved = assets.resolve_path(cfg.local_path.as_posix(), home=home_dir)
-            except FileNotFoundError:
-                continue
-            cfg.local_path = resolved
-
-
-def cmd_build_db(args: argparse.Namespace) -> int:
-    home_dir, default_data_dir = _prepare_environment(args)
-    output_dir = Path(args.output_dir) if args.output_dir else default_data_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    if args.config:
-        config_path = Path(args.config)
-    else:
-        config_path = assets.resolve_path("config/marker_sources.yaml", home=home_dir)
-
-    sources = load_sources_from_yaml(config_path)
-    _rewrite_local_paths(sources, home_dir)
-
-    loader = MarkerDataLoader(
-        sources,
-        output_dir,
-        parquet_path=output_dir / "marker_db.parquet",
-        sqlite_path=output_dir / "marker_db.sqlite",
-    )
-    try:
-        df = loader.run(
-            write_parquet=not args.skip_parquet,
-            write_sqlite=not args.skip_sqlite,
-            local_only=args.offline or args.local_only,
-            enforce_checksums=args.verify_checksums,
-        )
-    finally:
-        loader.close()
-
-    console.print(
-        f"[green]Ingested {len(df)} marker rows into {output_dir}[/green]",
-    )
-    return 0
-
-
-def cmd_scanpy(args: argparse.Namespace) -> int:
-    home_dir, data_dir = _prepare_environment(args)
-    cmd_args = args.scanpy_args or ["--help"]
-    os.environ.setdefault("GPT_CELL_ANNOTATOR_ASSETS_HOME", str(home_dir))
-    sys.argv = ["gca scanpy", *cmd_args]
-    from gpt_cell_annotator import scanpy
-
-    return scanpy.main(cmd_args)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -326,57 +266,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Write a summary CSV of the annotations.",
     )
     annotate_parser.set_defaults(func=cmd_annotate)
-
-    build_parser = subparsers.add_parser(
-        "build-db",
-        parents=[common],
-        help="Build the marker knowledge base artifacts.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    build_parser.add_argument(
-        "--config",
-        type=Path,
-        help="Override the marker source configuration file.",
-    )
-    build_parser.add_argument(
-        "--output-dir",
-        type=Path,
-        help="Destination directory for the generated artifacts.",
-    )
-    build_parser.add_argument(
-        "--skip-parquet",
-        action="store_true",
-        help="Skip writing the Parquet artifact.",
-    )
-    build_parser.add_argument(
-        "--skip-sqlite",
-        action="store_true",
-        help="Skip writing the SQLite artifact.",
-    )
-    build_parser.add_argument(
-        "--verify-checksums",
-        action="store_true",
-        help="Strictly enforce configured checksums for downloads.",
-    )
-    build_parser.add_argument(
-        "--local-only",
-        action="store_true",
-        help="Restrict ingestion to local files even when URLs are available.",
-    )
-    build_parser.set_defaults(func=cmd_build_db)
-
-    scanpy_parser = subparsers.add_parser(
-        "scanpy",
-        parents=[common],
-        help="Proxy subcommands for gpt_cell_annotator.scanpy.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    scanpy_parser.add_argument(
-        "scanpy_args",
-        nargs=argparse.REMAINDER,
-        help="Arguments forwarded to `python -m gpt_cell_annotator.scanpy`.",
-    )
-    scanpy_parser.set_defaults(func=cmd_scanpy)
 
     return parser
 

@@ -42,23 +42,3 @@ def test_cli_annotate_offline(
     report = json.loads(output_json.read_text(encoding="utf-8"))
     assert "clusters" in report
     assert any(cluster.get("annotation", {}).get("primary_label") for cluster in report["clusters"])
-
-
-def test_cli_build_db_offline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assets_home = tmp_path / "assets"
-    monkeypatch.setenv("GPT_CELL_ANNOTATOR_HOME", str(assets_home))
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-    output_dir = tmp_path / "db"
-    exit_code = cli.main(
-        [
-            "build-db",
-            "--offline",
-            "--output-dir",
-            str(output_dir),
-        ]
-    )
-
-    assert exit_code == 0
-    assert (output_dir / "marker_db.parquet").exists()
-    assert (output_dir / "marker_db.sqlite").exists()

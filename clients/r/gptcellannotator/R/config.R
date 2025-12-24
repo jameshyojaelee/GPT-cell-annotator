@@ -2,31 +2,17 @@
 #'
 #' @description
 #' Creates or retrieves configuration used by `gptcellannotator` to talk to the
-#' backend REST service or shell out to the CLI (default).
+#' shell out to the CLI (default).
 #'
-#' @param base_url Optional base URL for the REST service. Defaults to
-#'   `GPTCA_BASE_URL`; set to `NA` to disable HTTP calls.
-#' @param api_key API key passed as `Authorization: Bearer` header when present
-#'   (defaults to `GPTCA_API_KEY`).
 #' @param cli_path Optional path to the CLI (`gca`). If `NULL`, the CLI is
 #'   auto-detected using `Sys.which("gca")`.
-#' @param timeout Timeout in seconds for HTTP requests.
-#' @param retry_max Maximum retry attempts for transient HTTP failures.
-#' @param retry_backoff Initial backoff in seconds for retries (exponential).
 #' @param offline Logical flag forcing the CLI path. Defaults to `TRUE`.
-#' @param user_agent Custom user agent string appended to requests.
 #'
 #' @return A `GptcaConfig` object.
 #' @export
 gptca_config <- function(
-  base_url = Sys.getenv("GPTCA_BASE_URL", unset = NA_character_),
-  api_key = Sys.getenv("GPTCA_API_KEY", unset = NA_character_),
   cli_path = Sys.getenv("GPTCA_CLI_PATH", unset = ""),
-  timeout = 120,
-  retry_max = 3,
-  retry_backoff = 1,
-  offline = TRUE,
-  user_agent = utils::packageName()
+  offline = TRUE
 ) {
   if (!nzchar(cli_path)) {
     cli_path <- Sys.which("gca")
@@ -36,14 +22,8 @@ gptca_config <- function(
   }
 
   cfg <- list(
-    base_url = normalize_base_url(base_url),
-    api_key = if (!is.na(api_key) && nzchar(api_key)) api_key else NULL,
     cli_path = if (!is.null(cli_path) && nzchar(cli_path)) cli_path else NULL,
-    timeout = validate_positive_number(timeout, "timeout"),
-    retry_max = validate_non_negative_integer(retry_max, "retry_max"),
-    retry_backoff = validate_positive_number(retry_backoff, "retry_backoff"),
-    offline = isTRUE(offline),
-    user_agent = gptca_user_agent(user_agent)
+    offline = isTRUE(offline)
   )
   class(cfg) <- "GptcaConfig"
   cfg
@@ -53,12 +33,7 @@ gptca_config <- function(
 print.GptcaConfig <- function(x, ...) {
   cli::cli_text("{.strong GPT Cell Annotator configuration}")
   cli::cli_ul(c(
-    "base_url" = x$base_url %||% "<unset>",
-    "api_key" = ifelse(is.null(x$api_key), "<unset>", "<hidden>"),
     "cli_path" = ifelse(is.null(x$cli_path), "<not-found>", x$cli_path),
-    "timeout" = sprintf("%.1f sec", x$timeout),
-    "retry_max" = x$retry_max,
-    "retry_backoff" = sprintf("%.1f sec", x$retry_backoff),
     "offline" = ifelse(isTRUE(x$offline), "yes", "no")
   ))
   invisible(x)
@@ -103,48 +78,5 @@ gptca_config_reset <- function() {
 }
 
 .gptca_state <- new.env(parent = emptyenv())
-
-normalize_base_url <- function(url) {
-  if (is.null(url) || (length(url) == 1 && is.na(url)) || !nzchar(url)) {
-    return(NULL)
-  }
-  if (!rlang::is_string(url)) {
-    cli::cli_abort("{.arg base_url} must be a string or NA.")
-  }
-  url <- trimws(url)
-  url <- sub("/+$", "", url)
-  url
-}
-
-validate_positive_number <- function(value, name) {
-  if (!is.numeric(value) || length(value) != 1 || is.na(value) || value <= 0) {
-    cli::cli_abort("{.arg {arg}} must be a positive number.", arg = name)
-  }
-  as.numeric(value)
-}
-
-validate_non_negative_integer <- function(value, name) {
-  if (!is.numeric(value) || length(value) != 1 || is.na(value) || value < 0) {
-    cli::cli_abort("{.arg {arg}} must be a non-negative number.", arg = name)
-  }
-  as.integer(value)
-}
-
-gptca_user_agent <- function(extra = NULL) {
-  pkg <- tryCatch(
-    utils::packageDescription("gptcellannotator"),
-    error = function(...) NULL
-  )
-  if (is.null(pkg) || (length(pkg) == 1 && is.na(pkg))) {
-    version <- "0.0.0"
-  } else {
-    version <- pkg[["Version"]] %||% "0.0.0"
-  }
-  ua <- sprintf("gptcellannotator/%s", version)
-  if (!is.null(extra) && nzchar(extra) && !identical(extra, utils::packageName())) {
-    ua <- paste(ua, extra)
-  }
-  ua
-}
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
