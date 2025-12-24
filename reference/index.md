@@ -2,9 +2,8 @@
 
 ## Overview
 
-- [`gptcellannotator`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptcellannotator-package.md)
-  [`gptcellannotator-package`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptcellannotator-package.md)
-  : gptcellannotator: Connect Seurat workflows to GPT Cell Annotator
+- [`gptcellannotator-package`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptcellannotator-package.md)
+  : gptcellannotator: R bindings for GPT Cell Annotator
 
 ## Configuration
 
@@ -12,7 +11,7 @@
   [`gptca_config_set()`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptca_config.md)
   [`gptca_config_get()`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptca_config.md)
   [`gptca_config_reset()`](https://jameshyojaelee.github.io/CellAnnot-GPT/r/reference/gptca_config.md)
-  : Configure GPT Cell Annotator backend access
+  : Configure GPT Cell Annotator CLI access
 
 ## Annotation
 

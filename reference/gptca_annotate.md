@@ -1,8 +1,8 @@
 # Annotate clusters with GPT Cell Annotator
 
-High-level helpers to send marker tables to GPT Cell Annotator, merge
-validated labels into Seurat metadata, and visualise annotations on UMAP
-embeddings.
+High-level helpers to send marker tables to the GPT Cell Annotator CLI,
+merge validated labels into Seurat metadata, and visualise annotations
+on UMAP embeddings.
 
 ## Usage
 
@@ -14,7 +14,6 @@ gptca_annotate_markers(
   return_validated = TRUE,
   marker_limit = 50,
   offline = NULL,
-  fallback = TRUE,
   config = gptca_config_get(),
   cluster_column = NULL,
   gene_column = NULL,
@@ -35,7 +34,6 @@ gptca_annotate_seurat(
   score_column = NULL,
   top_n = 25,
   offline = NULL,
-  fallback = TRUE,
   config = gptca_config_get()
 )
 
@@ -79,8 +77,8 @@ gptca_plot_umap(
 
 - return_validated:
 
-  When `TRUE` (default) request the validated report. Set to `FALSE` to
-  retrieve raw LLM output for a single cluster.
+  When `TRUE` (default) returns the validated report. The CLI always
+  returns validated payloads.
 
 - marker_limit:
 
@@ -88,12 +86,8 @@ gptca_plot_umap(
 
 - offline:
 
-  Logical flag forcing CLI fallback. Defaults to the active
+  Logical flag forcing CLI offline mode. Defaults to the active
   configuration.
-
-- fallback:
-
-  Attempt CLI fallback automatically when HTTP requests fail.
 
 - config:
 
